@@ -11,6 +11,9 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--capture="):
 			_path = arg.trim_prefix("--capture=")
+		elif arg.begins_with("--press="):
+			for action in arg.trim_prefix("--press=").split(","):
+				Input.action_press.call_deferred(action)
 		elif arg.begins_with("--capture-delay="):
 			_delay = float(arg.trim_prefix("--capture-delay="))
 	if _path == "":

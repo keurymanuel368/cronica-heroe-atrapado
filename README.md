@@ -53,3 +53,5 @@ También funciona con mando (stick izquierdo para moverse, derecho para la cáma
 
 Modelos 3D de **KayKit** por Kay Lousberg ([kaylousberg.com](https://www.kaylousberg.com)), licencia CC0:
 Adventurers Character Pack y Medieval Hexagon Pack.
+
+Héroe: modelo de muestra **HairSample_Male** de VRoid (licencia CC0), con animaciones de KayKit trasladadas a su esqueleto.

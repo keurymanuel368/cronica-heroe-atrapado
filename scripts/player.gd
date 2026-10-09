@@ -2,7 +2,6 @@ extends CharacterBody3D
 ## El héroe: se mueve en relación con la cámara, corre, salta y celebra.
 
 const Toon := preload("res://scripts/toon.gd")
-const ModelUtil := preload("res://scripts/model_util.gd")
 
 const WALK_SPEED := 3.4
 const RUN_SPEED := 7.2
@@ -19,18 +18,23 @@ const PITCH_MAX := deg_to_rad(25.0)
 const ZOOM_MIN := 2.5
 const ZOOM_MAX := 10.0
 
-const HERO_MODEL := "res://assets/kaykit/characters/Knight.glb"
-## Piezas del modelo que se dejan visibles: espada de una mano y escudo redondo.
-const VISIBLE_GEAR := ["1H_Sword", "Round_Shield"]
-const ALL_GEAR := ["1H_Sword", "1H_Sword_Offhand", "2H_Sword", "Badge_Shield",
-	"Rectangle_Shield", "Round_Shield", "Spike_Shield"]
+const Retarget := preload("res://scripts/retarget.gd")
+
+## Héroe anime (VRoid, CC0). Las animaciones salen del esqueleto de KayKit,
+## que se carga oculto y se copia hueso a hueso al héroe.
+const HERO_MODEL := "res://assets/characters/heroe.glb"
+const ANIM_SOURCE := "res://assets/kaykit/characters/Knight.glb"
+## Superficies del héroe que llevan contorno (la cara y los ojos no).
+const OUTLINED := ["SKIN", "CLOTH", "HAIR"]
 
 const LOOPING := ["Idle", "Walking_A", "Running_A", "Jump_Idle"]
 
 var spawn_point := Vector3.ZERO
 
 var _model: Node3D
+var _driver: Node3D
 var _anim: AnimationPlayer
+var _retarget
 var _pivot: Node3D
 var _arm: SpringArm3D
 var _camera: Camera3D
@@ -46,32 +50,72 @@ func _ready() -> void:
 	_build_body()
 	_build_camera()
 	spawn_point = global_position
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--cam-yaw="):
+			_yaw = deg_to_rad(float(arg.trim_prefix("--cam-yaw=")))
+		elif arg.begins_with("--cam-zoom="):
+			_zoom = float(arg.trim_prefix("--cam-zoom="))
 
 
 func _build_body() -> void:
 	var shape := CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.45
-	capsule.height = 1.9
+	capsule.radius = 0.35
+	capsule.height = 1.7
 	shape.shape = capsule
-	shape.position.y = 0.95
+	shape.position.y = 0.85
 	add_child(shape)
 
-	_model = (load(HERO_MODEL) as PackedScene).instantiate()
+	# El modelo mira hacia -Z; se gira para que mire hacia +Z como el resto.
+	_model = Node3D.new()
 	add_child(_model)
-	for gear_name in ALL_GEAR:
-		var gear := _model.find_child(gear_name, true, false)
-		if gear:
-			gear.visible = gear_name in VISIBLE_GEAR
-	var box := ModelUtil.local_aabb(_model)
-	_model.scale = Vector3.ONE * (1.85 / box.size.y)
-	Toon.apply(_model, 0.012)
+	var hero: Node3D = (load(HERO_MODEL) as PackedScene).instantiate()
+	hero.rotation.y = PI
+	_model.add_child(hero)
+	_outline_hero(hero)
 
-	_anim = _model.find_child("AnimationPlayer", true, false)
+	_driver = (load(ANIM_SOURCE) as PackedScene).instantiate()
+	_driver.visible = false
+	_model.add_child(_driver)
+	_anim = _driver.find_child("AnimationPlayer", true, false)
+	_anim.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	for anim_name in LOOPING:
 		if _anim.has_animation(anim_name):
 			_anim.get_animation(anim_name).loop_mode = Animation.LOOP_LINEAR
 	_anim.play("Idle")
+
+	var src: Skeleton3D = _driver.find_children("*", "Skeleton3D", true, false)[0]
+	var tgt: Skeleton3D = hero.find_children("*", "Skeleton3D", true, false)[0]
+	_retarget = Retarget.new(src, tgt)
+	_model.rotation.y = PI
+
+
+func _outline_hero(hero: Node) -> void:
+	var outline := StandardMaterial3D.new()
+	outline.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	outline.cull_mode = BaseMaterial3D.CULL_FRONT
+	outline.albedo_color = Toon.OUTLINE_COLOR
+	outline.grow = true
+	outline.grow_amount = 0.006
+	for mi in hero.find_children("*", "MeshInstance3D", true, false):
+		var mesh: Mesh = mi.mesh
+		for i in mesh.get_surface_count():
+			var mat: Material = mi.get_active_material(i)
+			if mat == null:
+				continue
+			var tagged := false
+			for tag in OUTLINED:
+				if tag in mat.resource_name:
+					tagged = true
+			if tagged and mat is BaseMaterial3D and mat.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED:
+				var m: BaseMaterial3D = mat.duplicate()
+				m.next_pass = outline
+				mi.set_surface_override_material(i, m)
+
+
+func _process(delta: float) -> void:
+	_anim.advance(delta)
+	_retarget.apply()
 
 
 func _build_camera() -> void:
@@ -161,7 +205,7 @@ func _update_camera(delta: float) -> void:
 	var stick := Input.get_vector("look_left", "look_right", "look_up", "look_down")
 	_yaw -= stick.x * STICK_SENSITIVITY * delta
 	_pitch = clamp(_pitch - stick.y * STICK_SENSITIVITY * delta, PITCH_MIN, PITCH_MAX)
-	_pivot.global_position = _pivot.global_position.lerp(global_position + Vector3(0, 1.6, 0), 1.0 - exp(-14.0 * delta))
+	_pivot.global_position = _pivot.global_position.lerp(global_position + Vector3(0, 1.45, 0), 1.0 - exp(-14.0 * delta))
 	_pivot.rotation = Vector3(_pitch, _yaw, 0)
 	_arm.spring_length = lerp(_arm.spring_length, _zoom, 1.0 - exp(-10.0 * delta))
 
