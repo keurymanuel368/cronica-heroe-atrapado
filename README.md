@@ -1,0 +1,1 @@
+# cronica-heroe-atrapado
