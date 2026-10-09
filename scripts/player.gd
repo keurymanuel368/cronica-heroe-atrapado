@@ -1,6 +1,9 @@
 extends CharacterBody3D
 ## El héroe: se mueve en relación con la cámara, corre, salta y celebra.
 
+const Toon := preload("res://scripts/toon.gd")
+const ModelUtil := preload("res://scripts/model_util.gd")
+
 const WALK_SPEED := 3.4
 const RUN_SPEED := 7.2
 const ACCELERATION := 14.0

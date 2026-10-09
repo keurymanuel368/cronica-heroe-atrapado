@@ -4,6 +4,8 @@ extends Node3D
 
 const NATURE := "res://assets/kaykit/nature/"
 const PLAYER_SCRIPT := preload("res://scripts/player.gd")
+const Toon := preload("res://scripts/toon.gd")
+const ModelUtil := preload("res://scripts/model_util.gd")
 const GRASS_SHADER := preload("res://shaders/grass.gdshader")
 
 const TREES := ["tree_single_A", "tree_single_B", "trees_A_large", "trees_A_medium",
@@ -353,7 +355,8 @@ func _build_hud() -> void:
 	var title := VBoxContainer.new()
 	title.position = Vector2(24, 20)
 	title.add_child(_label("CRÓNICA DEL HÉROE ATRAPADO", 26, gold))
-	title.add_child(_label("Fase 1 · Prototipo", 16, rune))
+	var version := FileAccess.get_file_as_string("res://version.txt").strip_edges()
+	title.add_child(_label("Fase 1 · Prototipo · versión %s" % version, 16, rune))
 	layer.add_child(title)
 
 	_help_panel = PanelContainer.new()

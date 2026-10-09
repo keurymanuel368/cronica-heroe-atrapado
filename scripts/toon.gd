@@ -1,4 +1,3 @@
-class_name Toon
 ## Convierte los materiales de un modelo al estilo anime (cel-shading):
 ## sombras en bandas duras y un contorno oscuro alrededor de la figura.
 

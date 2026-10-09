@@ -1,4 +1,3 @@
-class_name ModelUtil
 ## Utilidades para medir y escalar modelos importados.
 
 

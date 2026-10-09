@@ -10,7 +10,10 @@ Fases del proyecto: 1 Prototipo · 2 Combate · 3 Mundo · 4 Gremios y misiones 
 
 ## Cómo jugar
 
-Abre `CronicaDelHeroeAtrapado.exe` (se entrega en cada fase) con doble clic en Windows de 64 bits. No hace falta instalar nada. Para generarlo tú mismo desde Godot: **Proyecto → Exportar → Windows Desktop**.
+1. Descarga [CronicaDelHeroeAtrapado.zip](https://github.com/keurymanuel368/cronica-heroe-atrapado/raw/descargas/CronicaDelHeroeAtrapado.zip) (Windows, 64 bits).
+2. Clic derecho en el .zip → **Extraer todo**, y abre el .exe con doble clic.
+
+Solo se descarga una vez. Cada vez que abres el juego, la pantalla de inicio busca la versión más nueva en la rama `descargas` y se actualiza sola (si no hay internet, juega con la última versión guardada).
 
 | Tecla | Acción |
 | --- | --- |
@@ -35,11 +38,16 @@ También funciona con mando (stick izquierdo para moverse, derecho para la cáma
 ## Estructura
 
 - `scenes/main.tscn` — escena principal.
+- `scripts/boot.gd` — pantalla de inicio que descarga las actualizaciones.
 - `scripts/main.gd` — construye el mundo, la luz, el cielo y la interfaz.
 - `scripts/player.gd` — movimiento del héroe, animaciones y cámara.
 - `scripts/toon.gd` — estilo anime (sombras en bandas y contorno).
 - `shaders/grass.gdshader` — pasto y camino de tierra.
 - `assets/kaykit/` — modelos 3D.
+
+## Publicar una actualización
+
+`tools/publicar.sh` sube el número de versión, exporta el juego y lo deja en la rama `descargas`. Con `--exe` también genera el .exe y su .zip.
 
 ## Créditos
 
