@@ -10,7 +10,7 @@ Fases del proyecto: 1 Prototipo · 2 Combate · 3 Mundo · 4 Gremios y misiones 
 
 ## Cómo jugar
 
-Descarga `CronicaDelHeroeAtrapado.exe` de la sección **Releases** y ábrelo con doble clic (Windows, 64 bits). No hace falta instalar nada.
+Abre `CronicaDelHeroeAtrapado.exe` (se entrega en cada fase) con doble clic en Windows de 64 bits. No hace falta instalar nada. Para generarlo tú mismo desde Godot: **Proyecto → Exportar → Windows Desktop**.
 
 | Tecla | Acción |
 | --- | --- |
