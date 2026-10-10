@@ -34,6 +34,7 @@ const ITEMS := {
 	"hierba": {"name": "Hierba curativa", "desc": "Material. Crece en la pradera."},
 	"hongo": {"name": "Hongo lunar", "desc": "Material. Brilla en el bosque."},
 	"hueso": {"name": "Hueso", "desc": "Material. Lo sueltan los esqueletos."},
+	"fragmento": {"name": "Fragmento del Sistema", "desc": "Objeto de la historia. Late como un corazón."},
 }
 
 ## Tienda de Pip: objetos y armaduras.

@@ -28,6 +28,7 @@ var _dungeon: Node3D
 var _in_dungeon := false
 var _interiors: Node3D
 var _big_map: Control
+var _story: Node
 ## Sala en la que está el héroe ({} si está fuera).
 var _inside: Dictionary = {}
 var _boss_defeated := false
@@ -61,6 +62,7 @@ func _ready() -> void:
 		horse.set_script(preload("res://scripts/horse.gd"))
 		horse.position = _world.surface(p.x, p.y)
 		horse.rotation.y = randf() * TAU
+		horse.coat_color = [Color(0.55, 0.34, 0.19), Color(0.92, 0.9, 0.86), Color(0.2, 0.16, 0.14), Color(0.72, 0.42, 0.2)][get_tree().get_nodes_in_group("horses").size() % 4]
 		add_child(horse)
 	add_to_group("boss_listeners")
 	_clock = preload("res://scripts/daynight.gd").new()
@@ -104,6 +106,18 @@ func _ready() -> void:
 	_menus.player = _player
 	_menus.main = self
 	add_child(_menus)
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--story="):
+			_player.story = int(arg.trim_prefix("--story="))
+		elif arg == "--boss-done":
+			_boss_defeated = true
+	_story = preload("res://scripts/story.gd").new()
+	add_child(_story)
+	_story.setup(self, _player, _hud, _world, _interiors)
+	if "--ending" in OS.get_cmdline_user_args():
+		_hud.show_ending.call_deferred()
+	if "--final" in OS.get_cmdline_user_args():
+		_story._enter_final.call_deferred()
 	_spawn_pickups()
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--menu="):
@@ -360,6 +374,8 @@ func save_game() -> void:
 		pos = _gate_point() + Vector3(-4, 0, 0)
 	elif not _inside.is_empty():
 		pos = _inside.out
+	elif _story and _story.in_final:
+		pos = _world.awakening_point() + Vector3(0, 0, 3)
 	SaveGame.save(_player, _clock, pos, {"boss_defeated": _boss_defeated})
 
 
@@ -371,6 +387,10 @@ func _gate_point() -> Vector3:
 func portal_prompt() -> String:
 	if _player.horse:
 		return "Bajar del caballo"
+	if _story and _story.portal_prompt() != "":
+		return _story.portal_prompt()
+	if _story and _story.in_final:
+		return ""
 	if not _inside.is_empty():
 		if _player.global_position.distance_to(_inside.exit) < 3.0:
 			return "Salir: " + _inside.name
@@ -407,7 +427,17 @@ func _near_door() -> Dictionary:
 
 
 func indoor_name() -> String:
+	if _story and _story.in_final:
+		return "Trono del Vacío"
 	return "" if _inside.is_empty() else String(_inside.name)
+
+
+func set_indoors(on: bool) -> void:
+	_clock.indoors = on
+
+
+func story() -> Node:
+	return _story
 
 
 func _enter_room(room: Dictionary) -> void:
@@ -433,6 +463,9 @@ func _exit_room() -> void:
 func use_portal() -> void:
 	if _player.horse:
 		_player.dismount()
+		return
+	if _story and _story.portal_prompt() != "":
+		_story.use_portal()
 		return
 	if not _inside.is_empty():
 		_exit_room()
@@ -559,7 +592,9 @@ func _escort_arrived() -> void:
 	get_tree().create_timer(8.0).timeout.connect(func(): bram.queue_free())
 
 
-func on_boss_defeated(_boss: Node) -> void:
+func on_boss_defeated(boss: Node) -> void:
+	if boss.kind == "final":
+		return
 	_boss_defeated = true
 	_hud.show_system("¡Derrotaste al Rey Esqueleto!\nEl Sistema registra tu hazaña. Una grieta de luz se abre en el cielo...", 7.0)
 	save_game()
@@ -597,7 +632,7 @@ func _process(delta: float) -> void:
 	_zone_timer -= delta
 	if _zone_timer <= 0.0 and _hud:
 		_zone_timer = 0.5
-		var z := "Mazmorra del Rey Esqueleto" if _in_dungeon else (String(_inside.name) if not _inside.is_empty() else zone_at(_player.global_position))
+		var z := "Mazmorra del Rey Esqueleto" if _in_dungeon else (indoor_name() if indoor_name() != "" else zone_at(_player.global_position))
 		if z != _zone:
 			if _zone != "":
 				_hud.show_zone(z)

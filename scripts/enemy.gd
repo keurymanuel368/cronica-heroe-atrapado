@@ -57,6 +57,18 @@ const KINDS := {
 		"speed": 3.6, "attack": "2H_Melee_Attack_Chop", "attack_speed": 0.8,
 		"poise": true, "level": 10, "boss": true, "respawn": false, "range": 3.6, "sight": 24.0,
 	},
+	"final": {
+		"name": "Kaito, el Primer Héroe",
+		"model": "res://assets/kaykit/characters/Knight.glb",
+		"gear_keep": ["2H_Sword"],
+		"weapon": "",
+		"shield": "",
+		"height": 3.6,
+		"hp": 1900, "atk": 28, "def": 7, "exp": 1500,
+		"speed": 4.6, "attack": "2H_Melee_Attack_Slice", "attack_speed": 0.9,
+		"poise": true, "level": 15, "boss": true, "final": true, "respawn": false, "range": 3.4, "sight": 40.0,
+		"tint": Color(0.5, 0.36, 0.7),
+	},
 }
 
 enum State { IDLE, PATROL, CHASE, ATTACK, HIT, DEAD }
@@ -68,6 +80,11 @@ const ATTACK_RANGE := 1.9
 const RESPAWN_TIME := 18.0
 
 var kind := "minion"
+## Color y nombre especiales (guardianes del vacío de la historia).
+var tint := Color.WHITE
+var title := ""
+var _special_timer := 6.0
+var _summoned := 0
 ## Si es true no reaparece al morir (emboscadas).
 var once := false
 var home := Vector3.ZERO
@@ -109,6 +126,11 @@ func _ready() -> void:
 
 	_model = (load(data.model) as PackedScene).instantiate()
 	add_child(_model)
+	if data.has("gear_keep"):
+		for child in _model.find_children("*", "MeshInstance3D", true, false):
+			var n := String(child.name)
+			if not (n.begins_with("Knight") or n in data.gear_keep):
+				child.visible = false
 	ModelUtil.fit_height(_model, data.height)
 	# Los modelos de KayKit ya tienen los pies en el origen.
 	_model.position.y = 0.0
@@ -117,7 +139,8 @@ func _ready() -> void:
 	var skeleton: Skeleton3D = _model.find_children("*", "Skeleton3D", true, false)[0]
 	_attach(skeleton, "handslot.r", data.weapon)
 	_attach(skeleton, "handslot.l", data.shield)
-	Toon.apply(_model, 0.012)
+	var color: Color = data.get("tint", tint)
+	Toon.apply(_model, 0.012, color)
 	_anim = _model.find_child("AnimationPlayer", true, false)
 	for n in ["Idle", "Walking_D_Skeletons", "Running_A", "Idle_Combat"]:
 		if _anim.has_animation(n):
@@ -145,7 +168,7 @@ func _build_bar() -> void:
 	_bar_bg = _bar_sprite(tex, Color(0.05, 0.05, 0.1, 0.8), 0)
 	_bar_fg = _bar_sprite(tex, Color(0.9, 0.2, 0.2), 1)
 	_label = Label3D.new()
-	_label.text = "%s  Nv %d" % [data.name, data.level]
+	_label.text = "%s  Nv %d" % [title if title != "" else data.name, data.level + (3 if title != "" else 0)]
 	_label.font_size = 40
 	_label.outline_size = 10
 	_label.pixel_size = 0.005
@@ -231,6 +254,8 @@ func _physics_process(delta: float) -> void:
 				target_velocity = d.normalized() * data.speed * 0.4
 				_play("Walking_D_Skeletons" if _anim.has_animation("Walking_D_Skeletons") else "Walking_A")
 		State.CHASE:
+			if data.get("final", false):
+				_final_specials(player, delta)
 			if dist > GIVE_UP or global_position.distance_to(home) > 45.0 or not player.is_alive():
 				_state = State.PATROL
 				_patrol_target = home
@@ -318,6 +343,62 @@ func _cast_orb(player: Node3D) -> void:
 	p.source = self
 
 
+## Kaito: anillos de orbes cada pocos segundos y esqueletos de apoyo al
+## bajar de vida.
+func _final_specials(player: Node3D, delta: float) -> void:
+	_special_timer -= delta
+	if _special_timer <= 0.0:
+		_special_timer = randf_range(5.0, 7.5) if hp > max_hp / 2 else randf_range(3.5, 5.0)
+		_anim.play("Spellcast_Shoot", 0.1)
+		var count := 10 if hp > max_hp / 2 else 16
+		for i in count:
+			var a := TAU * i / count
+			_orb(global_position + Vector3(0, 1.5, 0), Vector3(cos(a), 0, sin(a)) * 9.0, int(data.atk * 0.6))
+		if player:
+			_orb(global_position + Vector3(0, 2.0, 0), (player.global_position + Vector3(0, 1.0, 0) - global_position - Vector3(0, 2.0, 0)).normalized() * 14.0, int(data.atk * 0.8))
+	var thresholds := [0.7, 0.4, 0.15]
+	if _summoned < thresholds.size() and hp < max_hp * thresholds[_summoned]:
+		_summoned += 1
+		Fx.number(get_parent(), global_position + Vector3(0, data.height + 1.0, 0), "¡Levantaos, guardianes!", Color(0.8, 0.5, 1.0), 56)
+		for i in 3:
+			var e := CharacterBody3D.new()
+			e.set_script(load("res://scripts/enemy.gd"))
+			e.kind = ["minion", "rogue", "mage"][i]
+			e.once = true
+			e.tint = Color(0.6, 0.4, 0.9)
+			e.title = "Guardián del vacío"
+			var a := TAU * i / 3.0
+			e.home = global_position + Vector3(cos(a) * 5.0, 0, sin(a) * 5.0)
+			e.position = e.home + Vector3(0, 0.5, 0)
+			get_parent().add_child(e)
+
+
+func _orb(start: Vector3, vel: Vector3, damage: int) -> void:
+	var p := Node3D.new()
+	p.set_script(preload("res://scripts/projectile.gd"))
+	var ball := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.3
+	sphere.height = 0.6
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.7, 0.3, 1.0)
+	mat.emission_enabled = true
+	mat.emission = Color(0.6, 0.2, 1.0)
+	mat.emission_energy_multiplier = 3.0
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sphere.material = mat
+	ball.mesh = sphere
+	p.add_child(ball)
+	get_parent().add_child(p)
+	p.global_position = start
+	p.velocity = vel
+	p.damage = damage
+	p.hostile = true
+	p.radius = 0.6
+	p.life = 3.0
+	p.source = self
+
+
 func _face(dir: Vector3, delta: float) -> void:
 	if dir.length() < 0.01:
 		return
@@ -387,6 +468,7 @@ func _die() -> void:
 		Fx.number(get_parent(), global_position + Vector3(0, data.height + 0.6, 0), "+%d oro" % coins, Color(1.0, 0.85, 0.3), 40)
 		if randf() < 0.55:
 			player.add_item("hueso", 1)
+	get_tree().call_group("story_listeners", "on_story_kill", self)
 	if is_boss():
 		get_tree().call_group("boss_listeners", "on_boss_defeated", self)
 	var tween := create_tween()

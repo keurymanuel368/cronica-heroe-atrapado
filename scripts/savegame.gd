@@ -3,7 +3,7 @@
 const PATH := "user://partida.cfg"
 const SAVED := ["level", "exp_points", "max_hp", "hp", "max_mp", "atk", "def", "kills",
 	"gold", "items", "skills", "skill_points", "element", "armor", "forge",
-	"guild_member", "guild_points", "quests", "quests_done"]
+	"guild_member", "guild_points", "quests", "quests_done", "story", "story_count"]
 
 
 static func exists() -> bool:

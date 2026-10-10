@@ -18,6 +18,8 @@ const JUMP_VELOCITY := 7.0
 const GRAVITY := 20.0
 const TURN_SPEED := 12.0
 ## Altura del agua del río (world.WATER_LEVEL) menos lo que se hunde el héroe al nadar.
+## Ajuste del jinete sobre la silla (la pose de sentado baja la cadera).
+const RIDE_OFFSET := -0.2
 const SWIM_HEIGHT := 0.5 - 0.85
 const DODGE_SPEED := 11.0
 const DODGE_TIME := 0.38
@@ -67,6 +69,9 @@ var guild_points := 0
 ## Misiones activas: id -> progreso. Y las ya entregadas.
 var quests: Dictionary = {}
 var quests_done: Array = []
+## Modo historia: paso actual y contador del paso.
+var story := 0
+var story_count := 0
 var target: Node3D = null
 
 var _model: Node3D
@@ -503,7 +508,7 @@ func mount(h: Node3D) -> void:
 	_attack = {}
 	global_position = h.global_position + Vector3(0, 0.3, 0)
 	_model.rotation.y = h.rotation.y
-	_model.position.y = h.SADDLE_HEIGHT - 0.45
+	_model.position.y = h.SADDLE_HEIGHT + RIDE_OFFSET
 	_zoom = maxf(_zoom, 6.5)
 	_play("Sit_Chair_Idle", 0.2)
 

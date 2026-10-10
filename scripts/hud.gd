@@ -17,6 +17,17 @@ var _dialog: PanelContainer
 var _dialog_name: Label
 var _dialog_text: Label
 var _talking: Node = null
+## Líneas de la charla actual (las de la historia si toca).
+var _lines: Array = []
+var _story_talk := false
+## Diálogo de escena (sin personaje cerca): líneas y qué hacer al acabar.
+var _scene_name := ""
+var _scene_lines: Array = []
+var _scene_done: Callable
+var _scene_index := 0
+var _missions_text := ""
+var _chapter: Control
+var _ending: Control
 var _line := 0
 var _zone: Label
 var _zone_time := 0.0
@@ -409,13 +420,18 @@ func _nearest_npc() -> Node:
 func _talk_next() -> void:
 	if _talking == null:
 		return
-	var short: bool = _talking.talked or (_talking.action == "guild" and player.guild_member)
-	var total: int = 1 if short else _talking.lines.size()
+	var short: bool = not _story_talk and (_talking.talked or (_talking.action == "guild" and player.guild_member))
+	var total: int = 1 if short else _lines.size()
 	if _line >= total:
 		var finished := _talking
 		_talking = null
 		_dialog.visible = false
 		finished.talked = true
+		if _story_talk and main:
+			_story_talk = false
+			main.story().on_talk_finished(finished.npc_name)
+			if finished.action == "" or finished.action == "guild" and player.guild_member:
+				return
 		match finished.action:
 			"rest":
 				if main:
@@ -432,8 +448,94 @@ func _talk_next() -> void:
 				main.open_menu("smith")
 		return
 	_dialog_name.text = finished_name(_talking)
-	_dialog_text.text = _talking.lines[_line]
+	_dialog_text.text = _lines[_line]
 	_line += 1
+
+
+## Diálogo de escena: un personaje habla aunque no haya nadie cerca (F avanza).
+func show_dialog(speaker: String, lines: Array, on_done: Callable = Callable()) -> void:
+	_talking = null
+	_scene_name = speaker
+	_scene_lines = lines.duplicate()
+	_scene_index = 0
+	_scene_done = on_done
+	_dialog.visible = true
+	_scene_next()
+
+
+func _scene_next() -> void:
+	if _scene_index >= _scene_lines.size():
+		_scene_lines.clear()
+		_dialog.visible = false
+		if _scene_done.is_valid():
+			_scene_done.call()
+		return
+	_dialog_name.text = _scene_name
+	_dialog_text.text = _scene_lines[_scene_index] + "\n\n(F para continuar)"
+	_scene_index += 1
+
+
+## Tarjeta grande de capítulo nuevo en el centro de la pantalla.
+func show_chapter(top: String, title: String) -> void:
+	if _chapter:
+		_chapter.queue_free()
+	_chapter = VBoxContainer.new()
+	_chapter.set_anchors_preset(Control.PRESET_CENTER)
+	_chapter.offset_left = -400
+	_chapter.offset_right = 400
+	_chapter.offset_top = -140
+	_chapter.offset_bottom = -20
+	_chapter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var a := _label(top, 26, RUNE)
+	a.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var b := _label(title, 52, GOLD)
+	b.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	b.add_theme_constant_override("outline_size", 12)
+	b.add_theme_color_override("font_outline_color", Color(0.15, 0.08, 0.03))
+	_chapter.add_child(a)
+	_chapter.add_child(b)
+	add_child(_chapter)
+	var tw := _chapter.create_tween()
+	_chapter.modulate.a = 0.0
+	tw.tween_property(_chapter, "modulate:a", 1.0, 0.8)
+	tw.tween_interval(3.5)
+	tw.tween_property(_chapter, "modulate:a", 0.0, 1.2)
+	tw.tween_callback(_chapter.queue_free)
+
+
+## Pantalla final con créditos y botón para seguir explorando.
+func show_ending() -> void:
+	_ending = PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.03, 0.02, 0.05, 0.92)
+	_ending.add_theme_stylebox_override("panel", sb)
+	_ending.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var v := VBoxContainer.new()
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 16)
+	for item in [["FIN", 84, GOLD], ["Crónica del Héroe Atrapado", 34, RUNE],
+			["Liberaste a Kaito, el Primer Héroe, y el Sistema te reconoce como el guardián de Aurelia.", 20, TEXT],
+			["La puerta a tu mundo sigue abierta en el cristal. Pero Aurelia aún te necesita.", 20, TEXT],
+			["Héroe: nivel %d  ·  %d enemigos derrotados  ·  %d misiones del gremio" % [player.level, player.kills, player.quests_done.size()], 18, GOLD],
+			["Creado por Manuel y Claude", 18, TEXT], ["¡Gracias por jugar!", 26, GOLD]]:
+		var l := _label(item[0], item[1], item[2])
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		v.add_child(l)
+	var b := Button.new()
+	b.text = "Seguir explorando Aurelia"
+	b.add_theme_font_size_override("font_size", 20)
+	b.custom_minimum_size = Vector2(360, 54)
+	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	b.pressed.connect(func():
+		_ending.queue_free()
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED)
+	v.add_child(b)
+	_ending.add_child(v)
+	add_child(_ending)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_ending.modulate.a = 0.0
+	_ending.create_tween().tween_property(_ending, "modulate:a", 1.0, 2.0)
 
 
 func finished_name(npc: Node) -> String:
@@ -442,13 +544,22 @@ func finished_name(npc: Node) -> String:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _picker == null and event.is_action_pressed("interact") and player.is_alive():
-		if _talking:
+		if not _scene_lines.is_empty():
+			_scene_next()
+		elif _talking:
 			_talk_next()
 		else:
 			var npc := _nearest_npc()
 			if npc:
 				_talking = npc
 				_line = 0
+				_lines = npc.lines
+				_story_talk = false
+				if main and main.story():
+					var story_lines: Array = main.story().lines_for(npc.npc_name)
+					if not story_lines.is_empty():
+						_lines = story_lines
+						_story_talk = true
 				_dialog.visible = true
 				if main:
 					main._help_panel.visible = false
@@ -509,7 +620,7 @@ func _refresh() -> void:
 		var q := Rpg.quest(id)
 		var ready: bool = player.quest_ready(id)
 		lines.append("%s  %d/%d%s" % [q.name, player.quest_progress(id), q.count, "  ✔ entrégala en el gremio" if ready else ""])
-	_tracker.text = ("MISIONES\n" + "\n".join(lines)) if not lines.is_empty() else ""
+	_missions_text = ("MISIONES\n" + "\n".join(lines)) if not lines.is_empty() else ""
 	if _status.visible:
 		_status_label.text = "\n".join([
 			"Nombre:  Héroe atrapado",
@@ -531,6 +642,10 @@ func _refresh() -> void:
 
 func _process(delta: float) -> void:
 	_update_powers()
+	if main and main.story():
+		_tracker.text = main.story().tracker_text() + ("\n\n" + _missions_text if _missions_text != "" else "")
+	else:
+		_tracker.text = _missions_text
 	if _toast_time > 0.0:
 		_toast_time -= delta
 		if _toast_time < 1.0:
@@ -548,7 +663,9 @@ func _process(delta: float) -> void:
 		_clock_label.text = clock.clock_text() + ("  ·  Noche" if clock.is_night() else "")
 	if player:
 		var prompt := ""
-		if _talking:
+		if not _scene_lines.is_empty():
+			prompt = ""
+		elif _talking:
 			if not _talking.can_talk(player.global_position):
 				_talking = null
 				_dialog.visible = false
