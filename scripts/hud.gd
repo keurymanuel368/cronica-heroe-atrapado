@@ -9,6 +9,20 @@ const RUNE := Color(0.44, 0.83, 1.0)
 const TEXT := Color(0.91, 0.95, 1.0)
 
 var player: Node
+var main: Node
+
+var _prompt: Label
+var _dialog: PanelContainer
+var _dialog_name: Label
+var _dialog_text: Label
+var _talking: Node = null
+var _line := 0
+var _zone: Label
+var _zone_time := 0.0
+var _clock_label: Label
+var _boss_box: VBoxContainer
+var _boss_bar: ProgressBar
+var _boss_name: Label
 
 var _level_label: Label
 var _hp_bar: ProgressBar
@@ -26,9 +40,12 @@ var _picker: PanelContainer
 var _marker: Label3D
 
 
-func setup(p: Node) -> void:
+func setup(p: Node, loaded := false) -> void:
 	player = p
 	_build_bars()
+	_build_talk()
+	_build_zone_and_clock()
+	_build_boss_bar()
 	_build_weapon_box()
 	_build_toast()
 	_build_status()
@@ -38,7 +55,7 @@ func setup(p: Node) -> void:
 	player.died.connect(func(): show_system("Has caído en combate.\nEl Sistema te devuelve al cristal del despertar."))
 	player.weapon_changed.connect(func(_id): _refresh())
 	_refresh()
-	var skip := false
+	var skip := loaded
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--weapon="):
 			player.set_weapon(arg.trim_prefix("--weapon="))
@@ -264,7 +281,135 @@ func _pick(id: String) -> void:
 	show_system("Arma elegida: %s.\nVe a la arena del este y derrota a los esqueletos." % Weapons.DATA[id].name, 5.0)
 
 
+func _build_talk() -> void:
+	_prompt = _label("", 18, GOLD)
+	_prompt.anchor_left = 0.5
+	_prompt.anchor_right = 0.5
+	_prompt.anchor_top = 1.0
+	_prompt.anchor_bottom = 1.0
+	_prompt.offset_left = -300
+	_prompt.offset_right = 300
+	_prompt.offset_top = -250
+	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(_prompt)
+
+	_dialog = PanelContainer.new()
+	_dialog.add_theme_stylebox_override("panel", _style(0.9))
+	_dialog.anchor_left = 0.5
+	_dialog.anchor_right = 0.5
+	_dialog.anchor_top = 1.0
+	_dialog.anchor_bottom = 1.0
+	_dialog.offset_left = -420
+	_dialog.offset_right = 420
+	_dialog.offset_top = -210
+	_dialog.offset_bottom = -40
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	_dialog_name = _label("", 20, GOLD)
+	v.add_child(_dialog_name)
+	_dialog_text = _label("", 19)
+	_dialog_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_dialog_text.custom_minimum_size = Vector2(780, 70)
+	v.add_child(_dialog_text)
+	var hint := _label("F  continuar", 14, RUNE)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	v.add_child(hint)
+	_dialog.add_child(v)
+	_dialog.visible = false
+	add_child(_dialog)
+
+
+func _build_zone_and_clock() -> void:
+	_zone = _label("", 34, GOLD)
+	_zone.anchor_left = 0.5
+	_zone.anchor_right = 0.5
+	_zone.offset_left = -400
+	_zone.offset_right = 400
+	_zone.offset_top = 300
+	_zone.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_zone.add_theme_constant_override("outline_size", 8)
+	_zone.visible = false
+	add_child(_zone)
+	_clock_label = _label("", 16, RUNE)
+	_clock_label.anchor_left = 1.0
+	_clock_label.anchor_right = 1.0
+	_clock_label.offset_left = -260
+	_clock_label.offset_right = -24
+	_clock_label.offset_top = 24
+	_clock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	add_child(_clock_label)
+
+
+func _build_boss_bar() -> void:
+	_boss_box = VBoxContainer.new()
+	_boss_box.anchor_left = 0.5
+	_boss_box.anchor_right = 0.5
+	_boss_box.anchor_top = 1.0
+	_boss_box.anchor_bottom = 1.0
+	_boss_box.offset_left = -360
+	_boss_box.offset_right = 360
+	_boss_box.offset_top = -120
+	_boss_name = _label("", 20, Color(1.0, 0.6, 0.5))
+	_boss_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boss_box.add_child(_boss_name)
+	_boss_bar = _bar(Color(0.8, 0.15, 0.2), 720, 18)
+	_boss_box.add_child(_boss_bar)
+	_boss_box.visible = false
+	add_child(_boss_box)
+
+
+func show_zone(text: String) -> void:
+	_zone.text = "— %s —" % text
+	_zone.visible = true
+	_zone.modulate.a = 1.0
+	_zone_time = 3.5
+
+
+func _nearest_npc() -> Node:
+	for npc in get_tree().get_nodes_in_group("npcs"):
+		if npc.can_talk(player.global_position):
+			return npc
+	return null
+
+
+func _talk_next() -> void:
+	if _talking == null:
+		return
+	if _line >= _talking.lines.size():
+		var finished := _talking
+		_talking = null
+		_dialog.visible = false
+		if finished.action == "rest" and main:
+			main.rest()
+			show_system("Dormiste hasta el amanecer.\nVida y maná al máximo. Partida guardada.", 4.0)
+		return
+	_dialog_name.text = finished_name(_talking)
+	_dialog_text.text = _talking.lines[_line]
+	_line += 1
+
+
+func finished_name(npc: Node) -> String:
+	return npc.npc_name if npc.role == "" else "%s  ·  %s" % [npc.npc_name, npc.role]
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if _picker == null and event.is_action_pressed("interact") and player.is_alive():
+		if _talking:
+			_talk_next()
+		else:
+			var npc := _nearest_npc()
+			if npc:
+				_talking = npc
+				_line = 0
+				_dialog.visible = true
+				if main:
+					main._help_panel.visible = false
+				npc.on_talk_start()
+				_talk_next()
+			elif main and main.portal_prompt() != "":
+				main.use_portal()
+		get_viewport().set_input_as_handled()
+		return
 	if _picker:
 		for i in Weapons.ORDER.size():
 			if event is InputEventKey and event.pressed and event.physical_keycode == KEY_1 + i:
@@ -314,6 +459,37 @@ func _process(delta: float) -> void:
 			_toast.modulate.a = max(_toast_time, 0.0)
 		if _toast_time <= 0.0:
 			_toast.visible = false
+	if _zone_time > 0.0:
+		_zone_time -= delta
+		if _zone_time < 1.0:
+			_zone.modulate.a = max(_zone_time, 0.0)
+		if _zone_time <= 0.0:
+			_zone.visible = false
+	var clock := get_tree().get_first_node_in_group("world_clock")
+	if clock:
+		_clock_label.text = clock.clock_text() + ("  ·  Noche" if clock.is_night() else "")
+	if player:
+		var prompt := ""
+		if _talking:
+			if not _talking.can_talk(player.global_position):
+				_talking = null
+				_dialog.visible = false
+		else:
+			var npc := _nearest_npc()
+			if npc:
+				prompt = "F  Hablar con %s" % npc.npc_name
+			elif main and main.portal_prompt() != "":
+				prompt = "F  " + main.portal_prompt()
+		_prompt.text = prompt
+		var boss: Node = null
+		for e in get_tree().get_nodes_in_group("enemies"):
+			if e.is_boss() and e.is_alive() and e.is_engaged():
+				boss = e
+		_boss_box.visible = boss != null
+		if boss:
+			_boss_name.text = "%s  ·  Nv %d" % [boss.data.name, boss.data.level]
+			_boss_bar.max_value = boss.max_hp
+			_boss_bar.value = boss.hp
 	if player and _marker.is_inside_tree():
 		var t = player.target
 		_marker.visible = t != null

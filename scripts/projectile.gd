@@ -8,6 +8,8 @@ var life := 2.5
 var stagger := false
 var gravity := 0.0
 var source: Node3D
+## Si es de un enemigo, daña al héroe en vez de a los enemigos.
+var hostile := false
 
 
 func _physics_process(delta: float) -> void:
@@ -20,6 +22,12 @@ func _physics_process(delta: float) -> void:
 	global_position += step
 	if step.length() > 0.001:
 		look_at(global_position + step, Vector3.UP)
+	if hostile:
+		var player: Node3D = get_tree().get_first_node_in_group("player")
+		if player and player.is_alive() and player.global_position.distance_to(global_position - Vector3(0, 1.0, 0)) < radius + 0.4:
+			player.take_hit(damage, global_position - velocity.normalized() * 2.0, source)
+			queue_free()
+		return
 	for enemy in get_tree().get_nodes_in_group("enemies"):
 		if not enemy.is_alive():
 			continue

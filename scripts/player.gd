@@ -195,6 +195,14 @@ func set_weapon(id: String) -> void:
 	stats_changed.emit()
 
 
+## Coloca la cámara y al héroe mirando hacia `yaw` (tras un teletransporte).
+func face_yaw(yaw: float) -> void:
+	_yaw = yaw
+	_model.rotation.y = yaw + PI
+	_pivot.global_position = global_position + Vector3(0, 1.6, 0)
+	target = null
+
+
 func total_def() -> int:
 	return def + int(Weapons.DATA[weapon].defense)
 
@@ -350,7 +358,7 @@ func _physics_process(delta: float) -> void:
 	_update_animation(flat.length())
 	_was_on_floor = is_on_floor()
 
-	if global_position.y < -25.0:
+	if global_position.y < spawn_point.y - 30.0:
 		global_position = spawn_point
 		velocity = Vector3.ZERO
 

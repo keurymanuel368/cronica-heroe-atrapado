@@ -14,6 +14,20 @@ var _system_panel: PanelContainer
 var _system_timer := 9.0
 var _help_panel: PanelContainer
 var _player: CharacterBody3D
+var _clock: Node
+var _hud: CanvasLayer
+var _sun: DirectionalLight3D
+var _env: Environment
+var _sky_mat: ProceduralSkyMaterial
+var _autosave := 90.0
+var _zone_timer := 0.0
+var _zone := ""
+var _dungeon: Node3D
+var _in_dungeon := false
+var _boss_defeated := false
+
+const SaveGame := preload("res://scripts/savegame.gd")
+const NPC_SCRIPT := preload("res://scripts/npc.gd")
 
 
 func _ready() -> void:
@@ -27,9 +41,34 @@ func _ready() -> void:
 	_spawn_player()
 	_build_hud()
 	_spawn_enemies()
-	var hud := preload("res://scripts/hud.gd").new()
-	add_child(hud)
-	hud.setup(_player)
+	_spawn_villagers()
+	_dungeon = preload("res://scripts/dungeon.gd").new()
+	add_child(_dungeon)
+	_dungeon.build()
+	add_to_group("boss_listeners")
+	_clock = preload("res://scripts/daynight.gd").new()
+	_clock.sun = _sun
+	_clock.env = _env
+	_clock.sky = _sky_mat
+	add_child(_clock)
+	var loaded := false
+	var fresh := "--new" in OS.get_cmdline_user_args() or "--at-arena" in OS.get_cmdline_user_args()
+	if not fresh and SaveGame.exists():
+		loaded = SaveGame.load_into(_player, _clock)
+		_boss_defeated = SaveGame.flag("boss_defeated")
+		if _boss_defeated and _dungeon.boss:
+			_dungeon.boss.queue_free.call_deferred()
+	if "--in-dungeon" in OS.get_cmdline_user_args():
+		_enter_dungeon.call_deferred()
+	_clock.apply()
+	_hud = preload("res://scripts/hud.gd").new()
+	add_child(_hud)
+	_hud.main = self
+	_hud.setup(_player, loaded)
+	if loaded:
+		_system_timer = 0.0
+		_system_panel.visible = false
+		_hud.show_system("Partida cargada. Bienvenido de vuelta, Héroe.", 4.0)
 	add_child(preload("res://scripts/debug_capture.gd").new())
 
 
@@ -56,6 +95,8 @@ func _setup_input() -> void:
 	_bind("magic", [KEY_R], [JOY_BUTTON_DPAD_UP])
 	_bind("lock_on", [KEY_TAB], [JOY_BUTTON_RIGHT_STICK], [], [MOUSE_BUTTON_MIDDLE])
 	_bind("status", [KEY_C], [JOY_BUTTON_START])
+	_bind("interact", [KEY_F], [JOY_BUTTON_DPAD_DOWN])
+	_bind("save_game", [KEY_F5], [])
 	for i in 4:
 		_bind("weapon_%d" % (i + 1), [KEY_1 + i], [])
 
@@ -88,6 +129,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
 	elif event.is_action_pressed("toggle_help"):
 		_help_panel.visible = not _help_panel.visible
+	elif event.is_action_pressed("save_game"):
+		save_game()
+		_hud.show_system("Partida guardada.", 2.5)
 
 
 # --- Mundo -----------------------------------------------------------------
@@ -102,6 +146,7 @@ func _build_environment() -> void:
 	sky_mat.sun_angle_max = 20.0
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
+	_sky_mat = sky_mat
 
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
@@ -122,6 +167,7 @@ func _build_environment() -> void:
 	env.fog_density = 0.0028
 	env.fog_aerial_perspective = 0.6
 	env.fog_sky_affect = 0.0
+	_env = env
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
@@ -133,6 +179,7 @@ func _build_environment() -> void:
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 120.0
 	add_child(sun)
+	_sun = sun
 
 
 ## Cristal del Sistema en el punto donde despierta el héroe.
@@ -195,8 +242,29 @@ func _spawn_player() -> void:
 	_player.name = "Hero"
 	_player.position = _world.awakening_point() + Vector3(0, 0.3, 2.0)
 	add_child(_player)
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--at="):
+			var xz := arg.trim_prefix("--at=").split(",")
+			_player.global_position = _world.surface(float(xz[0]), float(xz[1])) + Vector3(0, 0.5, 0)
 	if "--at-arena" in OS.get_cmdline_user_args():
 		_player.global_position = _world.surface(_world.ARENA.x - 9.0, _world.ARENA.y) + Vector3(0, 0.5, 0)
+
+
+## Gente del pueblo con la que se puede hablar.
+func _spawn_villagers() -> void:
+	for v in _world.VILLAGERS:
+		var npc := Node3D.new()
+		npc.set_script(NPC_SCRIPT)
+		npc.npc_name = v.name
+		npc.role = v.role
+		npc.model_path = v.model
+		npc.gear = v.get("gear", [])
+		npc.lines = v.lines
+		npc.action = v.get("action", "")
+		npc.height = v.get("height", 1.75)
+		var at: Vector2 = _world.VILLAGE + v.at
+		npc.position = _world.surface(at.x, at.y)
+		add_child(npc)
 
 
 ## Esqueletos en la arena y grupos sueltos por los campos.
@@ -206,6 +274,10 @@ func _spawn_enemies() -> void:
 		[Vector2(-34, -30), ["minion", "minion"], 5.0],
 		[Vector2(40, -52), ["minion", "warrior"], 5.0],
 		[Vector2(-30, -95), ["minion", "minion", "minion"], 6.0],
+		[Vector2(-112, -32), ["rogue", "mage", "rogue"], 6.0],
+		[Vector2(-95, -12), ["mage", "minion"], 5.0],
+		[Vector2(-125, -55), ["rogue", "rogue", "mage"], 6.0],
+		[Vector2(70, -10), ["warrior", "minion"], 5.0],
 	]
 	for g in groups:
 		var center: Vector2 = g[0]
@@ -221,7 +293,98 @@ func _spawn_enemies() -> void:
 			add_child(e)
 
 
+func save_game() -> void:
+	if not _player.is_alive():
+		return
+	# Dentro de la mazmorra se guarda en la entrada, para volver al mundo.
+	var pos := _player.global_position
+	if _in_dungeon:
+		pos = _gate_point() + Vector3(-4, 0, 0)
+	SaveGame.save(_player, _clock, pos, {"boss_defeated": _boss_defeated})
+
+
+func _gate_point() -> Vector3:
+	return _world.surface(_world.DUNGEON_GATE.x, _world.DUNGEON_GATE.y)
+
+
+## Puertas que el héroe puede usar con F: [texto, acción] o vacío.
+func portal_prompt() -> String:
+	if _in_dungeon:
+		if _player.global_position.distance_to(_dungeon.start) < 3.5:
+			return "Salir de la mazmorra"
+	elif _player.global_position.distance_to(_gate_point()) < 5.0:
+		return "Entrar a la mazmorra"
+	return ""
+
+
+func use_portal() -> void:
+	if _in_dungeon:
+		_exit_dungeon()
+	else:
+		_enter_dungeon()
+
+
+func _enter_dungeon() -> void:
+	_in_dungeon = true
+	_clock.indoors = true
+	_player.global_position = _dungeon.start + Vector3(0, 0.5, -2.0)
+	_player.spawn_point = _dungeon.start + Vector3(0, 0.5, -2.0)
+	_player.velocity = Vector3.ZERO
+	_player.face_yaw(0.0)
+	if "--at-boss" in OS.get_cmdline_user_args():
+		_player.global_position = _dungeon.boss.global_position + Vector3(0, 0.5, 12)
+	_hud.show_zone("Mazmorra del Rey Esqueleto")
+	_zone = "Mazmorra del Rey Esqueleto"
+
+
+func _exit_dungeon() -> void:
+	_in_dungeon = false
+	_clock.indoors = false
+	_player.global_position = _gate_point() + Vector3(-5, 0.5, 0)
+	_player.spawn_point = _world.awakening_point() + Vector3(0, 0.3, 2.0)
+	_player.velocity = Vector3.ZERO
+	_player.face_yaw(PI / 2.0)
+
+
+func on_boss_defeated(_boss: Node) -> void:
+	_boss_defeated = true
+	_hud.show_system("¡Derrotaste al Rey Esqueleto!\nEl Sistema registra tu hazaña. Una grieta de luz se abre en el cielo...", 7.0)
+	save_game()
+
+
+## El posadero deja dormir: vida y maná al máximo, amanece y se guarda.
+func rest() -> void:
+	if _clock.time > 7.0:
+		_clock.day += 1
+	_clock.time = 7.0
+	_player.hp = _player.max_hp
+	_player.mp = _player.max_mp
+	_player.stats_changed.emit()
+	save_game()
+
+
+## Nombre de la zona donde está el héroe, para el aviso al entrar.
+func zone_at(p: Vector3) -> String:
+	var flat := Vector2(p.x, p.z)
+	for z in _world.ZONES:
+		if flat.distance_to(z[1]) < float(z[2]):
+			return z[0]
+	return "Pradera de Lumen"
+
+
 func _process(delta: float) -> void:
+	_autosave -= delta
+	if _autosave <= 0.0:
+		_autosave = 90.0
+		save_game()
+	_zone_timer -= delta
+	if _zone_timer <= 0.0 and _hud:
+		_zone_timer = 0.5
+		var z := "Mazmorra del Rey Esqueleto" if _in_dungeon else zone_at(_player.global_position)
+		if z != _zone:
+			if _zone != "":
+				_hud.show_zone(z)
+			_zone = z
 	if _crystal:
 		_crystal.rotation.y += delta * 0.8
 		_crystal.position.y = _crystal_y + sin(Time.get_ticks_msec() * 0.0015) * 0.25
@@ -274,7 +437,7 @@ func _build_hud() -> void:
 	title.position = Vector2(24, 20)
 	title.add_child(_label("CRÓNICA DEL HÉROE ATRAPADO", 26, gold))
 	var version := FileAccess.get_file_as_string("res://version.txt").strip_edges()
-	title.add_child(_label("Fase 2 · Combate · versión %s" % version, 16, rune))
+	title.add_child(_label("Fase 3 · El mundo · versión %s" % version, 16, rune))
 	layer.add_child(title)
 
 	_help_panel = PanelContainer.new()
@@ -297,6 +460,7 @@ func _build_hud() -> void:
 		"Q o Ctrl   Esquivar   ·   R   Bola de fuego",
 		"Tab   Fijar objetivo   ·   C   Ventana de estado",
 		"1 2 3 4   Cambiar de arma   ·   G   Celebrar",
+		"F   Hablar / Entrar   ·   F5   Guardar partida",
 		"F11   Pantalla completa   ·   Esc   Soltar el ratón",
 		"H   Ocultar esta ayuda",
 	]:

@@ -27,6 +27,36 @@ const KINDS := {
 		"speed": 3.4, "attack": "1H_Melee_Attack_Slice_Diagonal", "attack_speed": 0.9,
 		"poise": true, "level": 3,
 	},
+	"rogue": {
+		"name": "Pícaro esqueleto",
+		"model": "res://assets/kaykit/enemies/Skeleton_Rogue.glb",
+		"weapon": "res://assets/kaykit/enemies/Skeleton_Blade.gltf",
+		"shield": "",
+		"height": 1.75,
+		"hp": 60, "atk": 11, "def": 1, "exp": 22,
+		"speed": 5.6, "attack": "1H_Melee_Attack_Stab", "attack_speed": 1.5,
+		"poise": false, "level": 2,
+	},
+	"mage": {
+		"name": "Mago esqueleto",
+		"model": "res://assets/kaykit/enemies/Skeleton_Mage.glb",
+		"weapon": "res://assets/kaykit/enemies/Skeleton_Staff.gltf",
+		"shield": "",
+		"height": 1.8,
+		"hp": 50, "atk": 14, "def": 0, "exp": 28,
+		"speed": 3.0, "attack": "Spellcast_Shoot", "attack_speed": 1.0,
+		"poise": false, "level": 3, "ranged": true, "range": 10.0,
+	},
+	"boss": {
+		"name": "Rey Esqueleto",
+		"model": "res://assets/kaykit/enemies/Skeleton_Warrior.glb",
+		"weapon": "res://assets/kaykit/enemies/Skeleton_Axe.gltf",
+		"shield": "res://assets/kaykit/enemies/Skeleton_Shield_Small_A.gltf",
+		"height": 4.2,
+		"hp": 900, "atk": 28, "def": 6, "exp": 400,
+		"speed": 3.6, "attack": "2H_Melee_Attack_Chop", "attack_speed": 0.8,
+		"poise": true, "level": 10, "boss": true, "respawn": false, "range": 3.6, "sight": 24.0,
+	},
 }
 
 enum State { IDLE, PATROL, CHASE, ATTACK, HIT, DEAD }
@@ -140,9 +170,16 @@ func _bar_sprite(tex: Texture2D, color: Color, priority: int) -> Sprite3D:
 
 
 func _set_bar_visible(on: bool) -> void:
+	if is_boss():
+		on = false
 	_bar_bg.visible = on
 	_bar_fg.visible = on
 	_label.visible = on
+
+
+## Si está peleando con el héroe (para la barra del jefe en pantalla).
+func is_engaged() -> bool:
+	return _state == State.CHASE or _state == State.ATTACK or _state == State.HIT
 
 
 func is_alive() -> bool:
@@ -168,7 +205,7 @@ func _physics_process(delta: float) -> void:
 	match _state:
 		State.IDLE:
 			_play("Idle")
-			if dist < SIGHT:
+			if dist < float(data.get("sight", SIGHT)):
 				_state = State.CHASE
 			elif _timer <= 0.0:
 				var a := randf() * TAU
@@ -178,7 +215,7 @@ func _physics_process(delta: float) -> void:
 		State.PATROL:
 			var d := _patrol_target - global_position
 			d.y = 0
-			if dist < SIGHT:
+			if dist < float(data.get("sight", SIGHT)):
 				_state = State.CHASE
 			elif d.length() < 0.6 or _timer <= 0.0:
 				_state = State.IDLE
@@ -191,7 +228,7 @@ func _physics_process(delta: float) -> void:
 				_state = State.PATROL
 				_patrol_target = home
 				_timer = 10.0
-			elif dist < ATTACK_RANGE:
+			elif dist < _range():
 				if _cooldown <= 0.0:
 					_start_attack()
 				else:
@@ -206,7 +243,9 @@ func _physics_process(delta: float) -> void:
 			var elapsed := length - _timer
 			if not _attack_done and elapsed > length * 0.45:
 				_attack_done = true
-				if player and player.is_alive() and dist < ATTACK_RANGE + 0.6:
+				if data.get("ranged", false):
+					_cast_orb(player)
+				elif player and player.is_alive() and dist < _range() + 0.6:
 					var fwd := Vector3(sin(_model.rotation.y), 0, cos(_model.rotation.y))
 					if fwd.dot(to_player.normalized()) > 0.3:
 						player.take_hit(data.atk, global_position, self)
@@ -229,8 +268,47 @@ func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
 	move_and_slide()
-	if global_position.y < -20.0:
+	if global_position.y < home.y - 20.0:
 		global_position = home + Vector3(0, 2, 0)
+
+
+func _range() -> float:
+	return float(data.get("range", ATTACK_RANGE))
+
+
+func is_boss() -> bool:
+	return data.get("boss", false)
+
+
+## El mago esqueleto lanza un orbe morado lento hacia el héroe.
+func _cast_orb(player: Node3D) -> void:
+	if player == null or not player.is_alive():
+		return
+	var p := Node3D.new()
+	p.set_script(preload("res://scripts/projectile.gd"))
+	var ball := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.25
+	sphere.height = 0.5
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.7, 0.3, 1.0)
+	mat.emission_enabled = true
+	mat.emission = Color(0.6, 0.2, 1.0)
+	mat.emission_energy_multiplier = 3.0
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sphere.material = mat
+	ball.mesh = sphere
+	p.add_child(ball)
+	get_parent().add_child(p)
+	var start := global_position + Vector3(0, 1.5, 0)
+	p.global_position = start
+	var aim := (player.global_position + Vector3(0, 1.0, 0)) - start
+	p.velocity = aim.normalized() * 11.0
+	p.damage = int(data.atk)
+	p.hostile = true
+	p.radius = 0.6
+	p.life = 2.5
+	p.source = self
 
 
 func _face(dir: Vector3, delta: float) -> void:
@@ -284,7 +362,7 @@ func _update_bar() -> void:
 
 func _die() -> void:
 	_state = State.DEAD
-	_timer = RESPAWN_TIME
+	_timer = RESPAWN_TIME if data.get("respawn", true) else INF
 	_anim.play("Death_A", 0.05)
 	_set_bar_visible(false)
 	_shape.disabled = true
@@ -292,6 +370,8 @@ func _die() -> void:
 	var player := _player()
 	if player:
 		player.gain_exp(data.exp, global_position + Vector3(0, data.height, 0))
+	if is_boss():
+		get_tree().call_group("boss_listeners", "on_boss_defeated", self)
 	var tween := create_tween()
 	tween.tween_interval(2.5)
 	tween.tween_property(_model, "position:y", _base_y - 2.2, 1.5)

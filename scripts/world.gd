@@ -26,6 +26,50 @@ const BRIDGE := Vector2(0, -64.2)
 ## Arena de pelea: un claro llano al este del camino.
 const ARENA := Vector2(34, -22)
 const ARENA_RADIUS := 15.0
+## Bosque Susurrante: zona densa y oscura en la colina del oeste.
+const FOREST := Vector2(-112, -32)
+const FOREST_RADIUS := 48.0
+## Entrada de la mazmorra, en las colinas del este.
+const DUNGEON_GATE := Vector2(96, -8)
+
+## Zonas con nombre: [nombre, centro, radio]. Fuera de todas, la pradera.
+const ZONES := [
+	["Colina del Despertar", Vector2(0, 6), 22.0],
+	["Arena de Entrenamiento", Vector2(34, -22), 19.0],
+	["Aldea de Rivel", Vector2(4, -98), 42.0],
+	["Castillo de Aurelia", Vector2(30, -215), 60.0],
+	["Molino del Oeste", Vector2(-58, -118), 24.0],
+	["Bosque Susurrante", Vector2(-112, -32), 52.0],
+	["Puerta de la Mazmorra", Vector2(96, -8), 18.0],
+]
+
+## Gente del pueblo. `at` es relativo al centro de la aldea.
+const VILLAGERS := [
+	{"name": "Mira", "role": "Recepcionista del Gremio", "model": "res://assets/kaykit/characters/Rogue.glb", "at": Vector2(8, 6),
+		"lines": ["¡Bienvenido al Gremio de Aventureros de Rivel!",
+			"¿Un viajero sin registro? Qué raro... Te trajo el Sistema, ¿verdad? Lo noto en tus ojos.",
+			"El tablón de misiones todavía está vacío. Vuelve pronto: en cuanto lleguen encargos, serán tuyos.",
+			"Mientras tanto, entrena en la arena del este. Y si te sientes valiente, la mazmorra está en las colinas detrás de la arena."]},
+	{"name": "Tomás", "role": "Posadero · La Jarra Dorada", "model": "res://assets/kaykit/characters/Barbarian.glb", "at": Vector2(-7, -2), "action": "rest",
+		"lines": ["¡Bienvenido a La Jarra Dorada! Pareces agotado, muchacho.",
+			"Tengo una cama caliente arriba. Descansa: mañana será otro día."]},
+	{"name": "Borin", "role": "Herrero", "model": "res://assets/kaykit/characters/Barbarian.glb", "gear": ["2H_Axe"], "at": Vector2(9, -12),
+		"lines": ["Esa arma que llevas... no la forjó nadie de este mundo.",
+			"Tráeme materiales de los monstruos y algún día te la mejoraré.",
+			"Dicen que en el fondo de la mazmorra duerme un rey hecho de huesos. Yo no me acercaría."]},
+	{"name": "Pip", "role": "Mercader", "model": "res://assets/kaykit/characters/Rogue_Hooded.glb", "at": Vector2(-8, -16),
+		"lines": ["¡Pociones, mapas, recuerdos de la capital!",
+			"Bueno... cuando lleguen las caravanas. Ahora mismo solo tengo cajas vacías.",
+			"Un consejo gratis: el bosque del oeste se pone feo de noche. Los esqueletos de allí lanzan magia."]},
+	{"name": "Abuelo Ered", "role": "Anciano de la aldea", "model": "res://assets/kaykit/characters/Mage.glb", "gear": ["2H_Staff"], "at": Vector2(-15, 4),
+		"lines": ["Tú también despertaste junto al cristal azul, ¿eh?",
+			"Hace cien años llegó otro como tú. Hablaba de ventanas flotantes y de \"niveles\".",
+			"Subió y subió, venció al Rey Esqueleto... y un día simplemente desapareció.",
+			"Algunos dicen que encontró la salida de este mundo. Otros, que el mundo lo borró."]},
+	{"name": "Lila", "role": "", "model": "res://assets/kaykit/characters/Rogue.glb", "at": Vector2(3, -3), "height": 1.2,
+		"lines": ["¿Eres un héroe de verdad? ¡Tienes una ventana brillante encima de la cabeza!",
+			"Mi mamá no me deja salir del pueblo por los esqueletos. ¡Derrótalos a todos!"]},
+]
 
 ## El camino de tierra: del despertar, cruza el río por el puente, atraviesa
 ## el pueblo y sube hasta la puerta del castillo.
@@ -61,6 +105,9 @@ func build() -> void:
 	_build_castle()
 	_build_village()
 	_build_arena()
+	_build_forest()
+	_build_gate()
+	_build_signs()
 	_build_clouds()
 
 
@@ -313,7 +360,7 @@ func _tree_ok(p: Vector2) -> bool:
 		return false
 	if road_distance(p.x, p.y) < 7.0 or absf(p.y - river_z(p.x)) < 13.0:
 		return false
-	if p.distance_to(ARENA) < ARENA_RADIUS + 8.0:
+	if p.distance_to(ARENA) < ARENA_RADIUS + 8.0 or p.distance_to(DUNGEON_GATE) < 14.0:
 		return false
 	if p.distance_to(AWAKENING) < 16.0 or p.distance_to(CASTLE) < 50.0 or p.distance_to(VILLAGE) < 30.0 or p.distance_to(WINDMILL) < 18.0:
 		return false
@@ -346,9 +393,11 @@ func _build_trees() -> void:
 func _add_tree(p: Vector2) -> void:
 	_trees.append(p)
 	var kind := "tree_single_A" if _rng.randf() < 0.6 else "tree_single_B"
-	var holder := _place(NATURE + kind + ".gltf", surface(p.x, p.y) - Vector3(0, 0.2, 0), _rng.randf_range(6.5, 9.0), 0.025, TREE_TINT)
+	var f := _rng.randf_range(6.5, 9.0)
+	var holder := _place(NATURE + kind + ".gltf", surface(p.x, p.y) - Vector3(0, 0.2, 0), f, 0.025, TREE_TINT)
 	holder.rotation.y = _rng.randf() * TAU
 	_add_cylinder(surface(p.x, p.y) + Vector3(0, 2, 0), 0.6, 4.0)
+	_fade_near_camera(holder)
 
 
 func _build_rocks() -> void:
@@ -499,6 +548,112 @@ func _banner(base: Vector3) -> void:
 	add_child(flag)
 
 
+## Bosque Susurrante: árboles muy juntos y más oscuros, con un claro en medio.
+func _build_forest() -> void:
+	var placed: Array[Vector2] = []
+	var tries := 0
+	while placed.size() < 170 and tries < 6000:
+		tries += 1
+		var p := FOREST + Vector2(_rng.randfn(0, FOREST_RADIUS * 0.5), _rng.randfn(0, FOREST_RADIUS * 0.5))
+		var d := p.distance_to(FOREST)
+		if d > FOREST_RADIUS or d < 9.0:
+			continue
+		var h := height(p.x, p.y)
+		if h < 2.2 or absf(p.y - river_z(p.x)) < 12.0 or road_distance(p.x, p.y) < 6.0:
+			continue
+		var ok := true
+		for q in placed:
+			if q.distance_to(p) < 4.6:
+				ok = false
+				break
+		if not ok:
+			continue
+		for q in _trees:
+			if q.distance_to(p) < 4.6:
+				ok = false
+				break
+		if not ok:
+			continue
+		placed.append(p)
+		_trees.append(p)
+		var kind := "tree_single_B" if _rng.randf() < 0.65 else "tree_single_A"
+		var f := _rng.randf_range(7.5, 11.0)
+		var holder := _place(NATURE + kind + ".gltf", surface(p.x, p.y) - Vector3(0, 0.2, 0), f, 0.025, Color(0.55, 0.78, 0.5))
+		holder.rotation.y = _rng.randf() * TAU
+		_add_cylinder(surface(p.x, p.y) + Vector3(0, 2, 0), 0.6, 4.0)
+		_fade_near_camera(holder)
+	# Hongos brillantes en el suelo del bosque.
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = Color(0.6, 0.9, 1.0)
+	glow.emission_enabled = true
+	glow.emission = Color(0.4, 0.8, 1.0)
+	glow.emission_energy_multiplier = 1.5
+	var cap := SphereMesh.new()
+	cap.radius = 0.18
+	cap.height = 0.2
+	cap.material = glow
+	for i in 60:
+		var p := FOREST + Vector2(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1)) * FOREST_RADIUS * 0.8
+		var m := MeshInstance3D.new()
+		m.mesh = cap
+		m.position = surface(p.x, p.y) + Vector3(0, 0.08, 0)
+		add_child(m)
+
+
+## Entrada de la mazmorra: un arco de piedra con antorchas en la ladera.
+func _build_gate() -> void:
+	var c := surface(DUNGEON_GATE.x, DUNGEON_GATE.y)
+	var arch := _place("res://assets/kaykit/dungeon/wall_arched.glb", c, 1.4, 0.02)
+	arch.rotation.y = PI / 2.0
+	for side in [-1.0, 1.0]:
+		var pos := c + Vector3(0, 0, side * 3.6)
+		var pillar := _place("res://assets/kaykit/dungeon/pillar_decorated.glb", pos, 1.4, 0.02)
+		pillar.rotation.y = PI / 2.0
+		_add_box(pos + Vector3(0, 2.8, 0), Vector3(2.4, 5.6, 2.4))
+		var torch := _place("res://assets/kaykit/dungeon/torch_mounted.glb", pos + Vector3(-1.3, 3.2, 0), 1.2, 0.0)
+		torch.rotation.y = -PI / 2.0
+		var light := OmniLight3D.new()
+		light.light_color = Color(1.0, 0.6, 0.25)
+		light.light_energy = 1.6
+		light.omni_range = 6.0
+		light.position = pos + Vector3(-1.6, 3.8, 0)
+		add_child(light)
+	# Fondo oscuro dentro del arco, como si fuera la boca de una cueva.
+	var dark := MeshInstance3D.new()
+	var quad := BoxMesh.new()
+	quad.size = Vector3(0.2, 4.6, 4.2)
+	var black := StandardMaterial3D.new()
+	black.albedo_color = Color(0.02, 0.02, 0.04)
+	black.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	quad.material = black
+	dark.mesh = quad
+	dark.position = c + Vector3(0.4, 2.3, 0)
+	add_child(dark)
+
+
+## Letreros con el nombre de cada edificio importante.
+func _build_signs() -> void:
+	var v := Vector3(VILLAGE.x, VILLAGE_HEIGHT, VILLAGE.y)
+	for sign in [["GREMIO DE AVENTUREROS", Vector3(13, 0, 4)], ["POSADA · LA JARRA DORADA", Vector3(-12, 0, -2)],
+			["HERRERÍA", Vector3(14, 0, -12)], ["TIENDA", Vector3(-13, 0, -16)]]:
+		var p: Vector3 = v + sign[1]
+		var label := Label3D.new()
+		label.text = sign[0]
+		label.font_size = 96
+		label.outline_size = 22
+		label.pixel_size = 0.012
+		label.modulate = Color(1.0, 0.86, 0.45)
+		label.outline_modulate = Color(0.1, 0.06, 0.04)
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.position = Vector3(p.x, height(p.x, p.z) + 9.0, p.z)
+		add_child(label)
+	var guild := v + Vector3(13, 0, 4)
+	for side in [-1.0, 1.0]:
+		var fp := guild + Vector3(-4.5, 0, side * 3.5)
+		fp.y = height(fp.x, fp.z)
+		_place(BUILD + "flag_blue.gltf", fp, 6.0, 0.02)
+
+
 func _build_clouds() -> void:
 	for i in 12:
 		var angle := _rng.randf() * TAU
@@ -532,6 +687,25 @@ func _add_box(center: Vector3, size: Vector3, yaw := 0.0) -> void:
 	col.shape = box
 	body.add_child(col)
 	add_child(body)
+
+
+## Los árboles se vuelven transparentes cuando la cámara se acerca mucho,
+## para que las hojas no tapen al héroe.
+func _fade_near_camera(holder: Node3D) -> void:
+	for mi in holder.find_children("*", "MeshInstance3D", true, false):
+		for i in mi.mesh.get_surface_count():
+			var mat := mi.get_surface_override_material(i) as StandardMaterial3D
+			if mat == null:
+				continue
+			mat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_DITHER
+			mat.distance_fade_min_distance = 3.0
+			mat.distance_fade_max_distance = 8.0
+			if mat.next_pass:
+				var outline := (mat.next_pass as StandardMaterial3D).duplicate() as StandardMaterial3D
+				outline.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_DITHER
+				outline.distance_fade_min_distance = 3.0
+				outline.distance_fade_max_distance = 8.0
+				mat.next_pass = outline
 
 
 func _add_cylinder(center: Vector3, radius: float, h: float) -> void:
