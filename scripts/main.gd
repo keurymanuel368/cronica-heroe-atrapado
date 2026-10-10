@@ -13,6 +13,7 @@ var _crystal_y := 0.0
 var _system_panel: PanelContainer
 var _system_timer := 9.0
 var _help_panel: PanelContainer
+var _player: CharacterBody3D
 
 
 func _ready() -> void:
@@ -25,6 +26,10 @@ func _ready() -> void:
 	_build_crystal()
 	_spawn_player()
 	_build_hud()
+	_spawn_enemies()
+	var hud := preload("res://scripts/hud.gd").new()
+	add_child(hud)
+	hud.setup(_player)
 	add_child(preload("res://scripts/debug_capture.gd").new())
 
 
@@ -41,12 +46,21 @@ func _setup_input() -> void:
 	_bind("look_down", [], [], [JOY_AXIS_RIGHT_Y, 1.0])
 	_bind("run", [KEY_SHIFT], [JOY_BUTTON_LEFT_STICK, JOY_BUTTON_RIGHT_SHOULDER])
 	_bind("jump", [KEY_SPACE], [JOY_BUTTON_A])
-	_bind("cheer", [KEY_G], [JOY_BUTTON_Y])
+	_bind("cheer", [KEY_G], [])
 	_bind("toggle_help", [KEY_H], [JOY_BUTTON_BACK])
 	_bind("fullscreen", [KEY_F11], [])
+	_bind("attack_light", [KEY_J], [JOY_BUTTON_X], [], [MOUSE_BUTTON_LEFT])
+	_bind("attack_heavy", [KEY_E, KEY_K], [JOY_BUTTON_Y])
+	_bind("block", [KEY_L], [JOY_BUTTON_LEFT_SHOULDER], [], [MOUSE_BUTTON_RIGHT])
+	_bind("dodge", [KEY_Q, KEY_CTRL], [JOY_BUTTON_B])
+	_bind("magic", [KEY_R], [JOY_BUTTON_DPAD_UP])
+	_bind("lock_on", [KEY_TAB], [JOY_BUTTON_RIGHT_STICK], [], [MOUSE_BUTTON_MIDDLE])
+	_bind("status", [KEY_C], [JOY_BUTTON_START])
+	for i in 4:
+		_bind("weapon_%d" % (i + 1), [KEY_1 + i], [])
 
 
-func _bind(action: String, keys: Array, buttons: Array, axis: Array = []) -> void:
+func _bind(action: String, keys: Array, buttons: Array, axis: Array = [], mouse: Array = []) -> void:
 	if not InputMap.has_action(action):
 		InputMap.add_action(action, 0.2)
 	for k in keys:
@@ -62,6 +76,10 @@ func _bind(action: String, keys: Array, buttons: Array, axis: Array = []) -> voi
 		m.axis = axis[0]
 		m.axis_value = axis[1]
 		InputMap.action_add_event(action, m)
+	for mb in mouse:
+		var e := InputEventMouseButton.new()
+		e.button_index = mb
+		InputMap.action_add_event(action, e)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -172,11 +190,35 @@ func _block(center: Vector3, size: Vector3, color: Color) -> StaticBody3D:
 
 
 func _spawn_player() -> void:
-	var player := CharacterBody3D.new()
-	player.set_script(PLAYER_SCRIPT)
-	player.name = "Hero"
-	player.position = _world.awakening_point() + Vector3(0, 0.3, 2.0)
-	add_child(player)
+	_player = CharacterBody3D.new()
+	_player.set_script(PLAYER_SCRIPT)
+	_player.name = "Hero"
+	_player.position = _world.awakening_point() + Vector3(0, 0.3, 2.0)
+	add_child(_player)
+	if "--at-arena" in OS.get_cmdline_user_args():
+		_player.global_position = _world.surface(_world.ARENA.x - 9.0, _world.ARENA.y) + Vector3(0, 0.5, 0)
+
+
+## Esqueletos en la arena y grupos sueltos por los campos.
+func _spawn_enemies() -> void:
+	var groups := [
+		[_world.ARENA, ["minion", "minion", "minion", "warrior"], 7.0],
+		[Vector2(-34, -30), ["minion", "minion"], 5.0],
+		[Vector2(40, -52), ["minion", "warrior"], 5.0],
+		[Vector2(-30, -95), ["minion", "minion", "minion"], 6.0],
+	]
+	for g in groups:
+		var center: Vector2 = g[0]
+		var kinds: Array = g[1]
+		for i in kinds.size():
+			var a := TAU * i / kinds.size()
+			var p: Vector2 = center + Vector2(cos(a), sin(a)) * float(g[2]) * 0.6
+			var e := CharacterBody3D.new()
+			e.set_script(preload("res://scripts/enemy.gd"))
+			e.kind = kinds[i]
+			e.home = _world.surface(p.x, p.y)
+			e.position = e.home + Vector3(0, 0.5, 0)
+			add_child(e)
 
 
 func _process(delta: float) -> void:
@@ -232,7 +274,7 @@ func _build_hud() -> void:
 	title.position = Vector2(24, 20)
 	title.add_child(_label("CRÓNICA DEL HÉROE ATRAPADO", 26, gold))
 	var version := FileAccess.get_file_as_string("res://version.txt").strip_edges()
-	title.add_child(_label("Fase 1 · Prototipo · versión %s" % version, 16, rune))
+	title.add_child(_label("Fase 2 · Combate · versión %s" % version, 16, rune))
 	layer.add_child(title)
 
 	_help_panel = PanelContainer.new()
@@ -240,8 +282,9 @@ func _build_hud() -> void:
 	_help_panel.anchor_top = 1.0
 	_help_panel.anchor_bottom = 1.0
 	_help_panel.offset_left = 24
-	_help_panel.offset_top = -268
+	_help_panel.offset_top = -24
 	_help_panel.offset_bottom = -24
+	_help_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	var help := VBoxContainer.new()
 	help.add_child(_label("CONTROLES", 15, rune))
 	for line in [
@@ -249,8 +292,11 @@ func _build_hud() -> void:
 		"Shift   Correr",
 		"Espacio   Saltar",
 		"Ratón   Girar la cámara (clic para empezar)",
-		"Rueda   Acercar o alejar",
-		"G   Celebrar",
+		"Clic izquierdo   Ataque ligero (combo)",
+		"E   Ataque fuerte   ·   Clic derecho   Bloquear",
+		"Q o Ctrl   Esquivar   ·   R   Bola de fuego",
+		"Tab   Fijar objetivo   ·   C   Ventana de estado",
+		"1 2 3 4   Cambiar de arma   ·   G   Celebrar",
 		"F11   Pantalla completa   ·   Esc   Soltar el ratón",
 		"H   Ocultar esta ayuda",
 	]:

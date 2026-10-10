@@ -23,6 +23,9 @@ const VILLAGE := Vector2(4, -98)
 const VILLAGE_HEIGHT := 3.2
 const WINDMILL := Vector2(-58, -118)
 const BRIDGE := Vector2(0, -64.2)
+## Arena de pelea: un claro llano al este del camino.
+const ARENA := Vector2(34, -22)
+const ARENA_RADIUS := 15.0
 
 ## El camino de tierra: del despertar, cruza el río por el puente, atraviesa
 ## el pueblo y sube hasta la puerta del castillo.
@@ -34,6 +37,7 @@ var _noise := FastNoiseLite.new()
 var _ridge := FastNoiseLite.new()
 var _rng := RandomNumberGenerator.new()
 var _awakening_height := 0.0
+var _arena_height := 0.0
 
 
 func _init() -> void:
@@ -45,6 +49,7 @@ func _init() -> void:
 	_ridge.fractal_type = FastNoiseLite.FRACTAL_RIDGED
 	_rng.seed = 20261009
 	_awakening_height = _raw_height(AWAKENING.x, AWAKENING.y)
+	_arena_height = _raw_height(ARENA.x, ARENA.y)
 
 
 func build() -> void:
@@ -55,6 +60,7 @@ func build() -> void:
 	_build_rocks()
 	_build_castle()
 	_build_village()
+	_build_arena()
 	_build_clouds()
 
 
@@ -67,6 +73,7 @@ func river_z(x: float) -> float:
 func height(x: float, z: float) -> float:
 	var h := _raw_height(x, z)
 	h = _flatten(h, x, z, AWAKENING, _awakening_height, 7.0, 14.0)
+	h = _flatten(h, x, z, ARENA, _arena_height, ARENA_RADIUS + 2.0, ARENA_RADIUS + 12.0)
 	h = _flatten(h, x, z, CASTLE, CASTLE_HEIGHT, 30.0, 46.0)
 	h = _flatten(h, x, z, VILLAGE, VILLAGE_HEIGHT, 24.0, 40.0)
 	return h
@@ -203,6 +210,8 @@ func _can_grow(x: float, z: float, h: float) -> bool:
 		return false
 	if road_distance(x, z) < 2.8:
 		return false
+	if Vector2(x, z).distance_to(ARENA) < ARENA_RADIUS + 1.0:
+		return false
 	if Vector2(x, z).distance_to(CASTLE) < 40.0 or Vector2(x, z).distance_to(VILLAGE) < 22.0:
 		return false
 	return true
@@ -304,6 +313,8 @@ func _tree_ok(p: Vector2) -> bool:
 		return false
 	if road_distance(p.x, p.y) < 7.0 or absf(p.y - river_z(p.x)) < 13.0:
 		return false
+	if p.distance_to(ARENA) < ARENA_RADIUS + 8.0:
+		return false
 	if p.distance_to(AWAKENING) < 16.0 or p.distance_to(CASTLE) < 50.0 or p.distance_to(VILLAGE) < 30.0 or p.distance_to(WINDMILL) < 18.0:
 		return false
 	for t in _trees:
@@ -345,7 +356,7 @@ func _build_rocks() -> void:
 	while placed < 28:
 		var p := Vector2(_rng.randf_range(-140, 140), _rng.randf_range(-170, 60))
 		var h := height(p.x, p.y)
-		if h < 1.0 or road_distance(p.x, p.y) < 4.0 or p.distance_to(AWAKENING) < 12.0:
+		if h < 1.0 or road_distance(p.x, p.y) < 4.0 or p.distance_to(AWAKENING) < 12.0 or p.distance_to(ARENA) < ARENA_RADIUS + 6.0:
 			continue
 		var kind: String = ["rock_single_A", "rock_single_B", "rock_single_C", "rock_single_D", "rock_single_E"][_rng.randi() % 5]
 		var f := _rng.randf_range(5.0, 11.0)
@@ -421,6 +432,71 @@ func _build_village() -> void:
 	var bridge := _place(BUILD + "building_bridge_A.gltf", Vector3(BRIDGE.x, WATER_LEVEL + 0.2, BRIDGE.y), 9.0, 0.02)
 	bridge.rotation.y = PI / 2.0
 	_add_box(Vector3(BRIDGE.x, WATER_LEVEL + 1.0, BRIDGE.y), Vector3(5, 0.6, 22))
+
+
+## Arena: suelo de tierra, círculo de postes de piedra y estandartes.
+func _build_arena() -> void:
+	var c := surface(ARENA.x, ARENA.y)
+	var floor_mesh := MeshInstance3D.new()
+	var disc := CylinderMesh.new()
+	disc.top_radius = ARENA_RADIUS
+	disc.bottom_radius = ARENA_RADIUS
+	disc.height = 0.1
+	disc.radial_segments = 48
+	var dirt := StandardMaterial3D.new()
+	dirt.albedo_color = Color(0.62, 0.5, 0.36)
+	dirt.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	disc.material = dirt
+	floor_mesh.mesh = disc
+	floor_mesh.position = c + Vector3(0, 0.02, 0)
+	add_child(floor_mesh)
+	var stone := StandardMaterial3D.new()
+	stone.albedo_color = Color(0.62, 0.64, 0.7)
+	stone.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	var count := 20
+	for i in count:
+		var a := TAU * i / count
+		var p := ARENA + Vector2(cos(a), sin(a)) * (ARENA_RADIUS + 0.6)
+		# Deja una entrada mirando al camino (al oeste).
+		if absf(wrapf(a - PI, -PI, PI)) < 0.35:
+			continue
+		var post := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		var tall := 2.4 if i % 2 == 0 else 1.5
+		box.size = Vector3(0.8, tall, 0.8)
+		box.material = stone
+		post.mesh = box
+		post.position = surface(p.x, p.y) + Vector3(0, tall * 0.5 - 0.1, 0)
+		post.rotation.y = -a
+		add_child(post)
+		Toon.apply(post, 0.03)
+		_add_box(post.position, box.size, -a)
+		if i % 5 == 0:
+			_banner(surface(p.x, p.y) + Vector3(0, tall, 0))
+
+
+func _banner(base: Vector3) -> void:
+	var pole := MeshInstance3D.new()
+	var pm := CylinderMesh.new()
+	pm.top_radius = 0.05
+	pm.bottom_radius = 0.05
+	pm.height = 2.6
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.4, 0.26, 0.15)
+	pm.material = wood
+	pole.mesh = pm
+	pole.position = base + Vector3(0, 1.3, 0)
+	add_child(pole)
+	var flag := MeshInstance3D.new()
+	var fm := BoxMesh.new()
+	fm.size = Vector3(0.05, 1.0, 0.7)
+	var red := StandardMaterial3D.new()
+	red.albedo_color = Color(0.75, 0.15, 0.18)
+	red.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	fm.material = red
+	flag.mesh = fm
+	flag.position = base + Vector3(0, 2.1, 0.38)
+	add_child(flag)
 
 
 func _build_clouds() -> void:

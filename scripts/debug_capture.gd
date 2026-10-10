@@ -5,6 +5,8 @@ extends Node
 var _path := ""
 var _time := 0.0
 var _delay := 4.0
+## Pulsaciones programadas: [segundo, acción].
+var _taps: Array = []
 
 
 func _ready() -> void:
@@ -14,6 +16,10 @@ func _ready() -> void:
 		elif arg.begins_with("--press="):
 			for action in arg.trim_prefix("--press=").split(","):
 				Input.action_press.call_deferred(action)
+		elif arg.begins_with("--tap="):
+			for item in arg.trim_prefix("--tap=").split(","):
+				var parts := item.split("@")
+				_taps.append([float(parts[1]), parts[0]])
 		elif arg.begins_with("--capture-delay="):
 			_delay = float(arg.trim_prefix("--capture-delay="))
 	if _path == "":
@@ -22,6 +28,14 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
+	for tap in _taps.duplicate():
+		if _time >= tap[0]:
+			_taps.erase(tap)
+			for pressed in [true, false]:
+				var e := InputEventAction.new()
+				e.action = tap[1]
+				e.pressed = pressed
+				Input.parse_input_event(e)
 	if _time >= _delay:
 		get_viewport().get_texture().get_image().save_png(_path)
 		get_tree().quit()
