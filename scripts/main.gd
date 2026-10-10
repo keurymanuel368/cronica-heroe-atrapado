@@ -1,25 +1,15 @@
 extends Node3D
-## Escena del prototipo: un prado de prueba con cielo, luz, árboles, rocas,
-## plataformas para saltar, el héroe y la interfaz.
+## Escena principal: cielo, luz, el mundo, el cristal del Sistema donde
+## despierta el héroe, el héroe y la interfaz.
 
-const NATURE := "res://assets/kaykit/nature/"
 const PLAYER_SCRIPT := preload("res://scripts/player.gd")
 const Toon := preload("res://scripts/toon.gd")
-const ModelUtil := preload("res://scripts/model_util.gd")
-const GRASS_SHADER := preload("res://shaders/grass.gdshader")
-
-const TREES := ["tree_single_A", "tree_single_B", "trees_A_large", "trees_A_medium",
-	"trees_B_large", "trees_B_medium"]
-const ROCKS := ["rock_single_A", "rock_single_B", "rock_single_C", "rock_single_D", "rock_single_E"]
-const MOUNTAINS := ["mountain_A_grass_trees", "mountain_B_grass_trees", "hill_single_A",
-	"hill_single_B", "hill_single_C"]
-
-const WORLD_SIZE := 240.0
-const CLEAR_RADIUS := 14.0
+const WORLD_SCRIPT := preload("res://scripts/world.gd")
 
 var _rng := RandomNumberGenerator.new()
 var _crystal: Node3D
-var _clouds: Array[Node3D] = []
+var _world: Node3D
+var _crystal_y := 0.0
 var _system_panel: PanelContainer
 var _system_timer := 9.0
 var _help_panel: PanelContainer
@@ -29,11 +19,10 @@ func _ready() -> void:
 	_rng.seed = 20261009
 	_setup_input()
 	_build_environment()
-	_build_ground()
+	_world = WORLD_SCRIPT.new()
+	add_child(_world)
+	_world.build()
 	_build_crystal()
-	_build_platforms()
-	_scatter_nature()
-	_build_clouds()
 	_spawn_player()
 	_build_hud()
 	add_child(preload("res://scripts/debug_capture.gd").new())
@@ -112,8 +101,8 @@ func _build_environment() -> void:
 	env.glow_bloom = 0.05
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.72, 0.84, 1.0)
-	env.fog_density = 0.004
-	env.fog_aerial_perspective = 0.4
+	env.fog_density = 0.0028
+	env.fog_aerial_perspective = 0.6
 	env.fog_sky_affect = 0.0
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
@@ -124,33 +113,16 @@ func _build_environment() -> void:
 	sun.light_energy = 0.85
 	sun.light_color = Color(1.0, 0.96, 0.88)
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 90.0
+	sun.directional_shadow_max_distance = 120.0
 	add_child(sun)
-
-
-func _build_ground() -> void:
-	var body := StaticBody3D.new()
-	var shape := CollisionShape3D.new()
-	var slab := BoxShape3D.new()
-	slab.size = Vector3(WORLD_SIZE * 2.0, 2.0, WORLD_SIZE * 2.0)
-	shape.shape = slab
-	shape.position.y = -1.0
-	body.add_child(shape)
-	var mesh := MeshInstance3D.new()
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(WORLD_SIZE * 2.0, WORLD_SIZE * 2.0)
-	mesh.mesh = plane
-	var mat := ShaderMaterial.new()
-	mat.shader = GRASS_SHADER
-	mesh.material_override = mat
-	body.add_child(mesh)
-	add_child(body)
 
 
 ## Cristal del Sistema en el punto donde despierta el héroe.
 func _build_crystal() -> void:
+	var ground: Vector3 = _world.awakening_point() + Vector3(0, 0, -6.0)
+	_crystal_y = ground.y + 3.2
 	_crystal = Node3D.new()
-	_crystal.position = Vector3(0, 3.2, -4.5)
+	_crystal.position = Vector3(ground.x, _crystal_y, ground.z)
 	var gem := MeshInstance3D.new()
 	var shape := SphereMesh.new()
 	shape.radial_segments = 4
@@ -174,24 +146,8 @@ func _build_crystal() -> void:
 	_crystal.add_child(glow)
 	add_child(_crystal)
 
-	var base := _block(Vector3(0, 0.25, -4.5), Vector3(3.0, 0.5, 3.0), Color(0.45, 0.47, 0.56))
+	var base := _block(ground + Vector3(0, 0.15, 0), Vector3(3.0, 0.6, 3.0), Color(0.45, 0.47, 0.56))
 	base.rotation_degrees.y = 45
-
-
-## Plataformas de piedra para practicar saltos.
-func _build_platforms() -> void:
-	var stone := Color(0.42, 0.44, 0.52)
-	var steps := [
-		[Vector3(9, 0.5, 2), Vector3(3, 1.0, 3)],
-		[Vector3(12.5, 1.0, 4.5), Vector3(3, 2.0, 3)],
-		[Vector3(15.5, 1.6, 8), Vector3(3, 3.2, 3)],
-		[Vector3(15.5, 2.3, 12.5), Vector3(3, 4.6, 3)],
-		[Vector3(12, 3.0, 16), Vector3(4, 6.0, 4)],
-	]
-	for s in steps:
-		_block(s[0], s[1], stone)
-	_block(Vector3(-10, 0.4, 6), Vector3(6, 0.8, 4), stone.darkened(0.1))
-	_block(Vector3(-14, 1.2, 8), Vector3(3, 2.4, 3), stone)
 
 
 func _block(center: Vector3, size: Vector3, color: Color) -> StaticBody3D:
@@ -215,102 +171,22 @@ func _block(center: Vector3, size: Vector3, color: Color) -> StaticBody3D:
 	return body
 
 
-func _scatter_nature() -> void:
-	# Bosque alrededor del prado.
-	for i in 140:
-		var pos := _random_spot(CLEAR_RADIUS + 6.0, WORLD_SIZE * 0.42)
-		if abs(pos.x) < 5.0 and pos.z < 0.0:
-			continue
-		var tree := _place(TREES[_rng.randi() % TREES.size()], pos, _rng.randf_range(6.0, 8.5))
-		_add_trunk_collision(tree, pos)
-	# Rocas sueltas.
-	for i in 45:
-		var pos := _random_spot(CLEAR_RADIUS, WORLD_SIZE * 0.4)
-		var factor := _rng.randf_range(5.0, 10.0)
-		var rock := _place(ROCKS[_rng.randi() % ROCKS.size()], pos, factor)
-		_add_rock_collision(rock, pos, factor * 0.15)
-	# Montañas lejanas formando un anillo.
-	for i in 18:
-		var angle := TAU * i / 18.0 + _rng.randf_range(-0.1, 0.1)
-		var dist := WORLD_SIZE * _rng.randf_range(0.8, 0.95)
-		var pos := Vector3(cos(angle) * dist, 0, sin(angle) * dist)
-		_place(MOUNTAINS[_rng.randi() % MOUNTAINS.size()], pos, _rng.randf_range(22.0, 32.0), 0.0)
-
-
-func _random_spot(min_r: float, max_r: float) -> Vector3:
-	var angle := _rng.randf() * TAU
-	var r := sqrt(_rng.randf_range(min_r * min_r, max_r * max_r))
-	return Vector3(cos(angle) * r, 0, sin(angle) * r)
-
-
-## Coloca un modelo del paquete de naturaleza. Sus piezas están hechas para
-## un tablero pequeño, así que se agrandan con un factor uniforme.
-func _place(model_name: String, pos: Vector3, factor: float, outline := 0.03) -> Node3D:
-	var holder := Node3D.new()
-	holder.position = pos
-	holder.rotation.y = _rng.randf() * TAU
-	var model: Node3D = (load(NATURE + model_name + ".gltf") as PackedScene).instantiate()
-	holder.add_child(model)
-	model.scale = Vector3.ONE * factor
-	Toon.apply(model, outline / factor)
-	add_child(holder)
-	return holder
-
-
-func _add_trunk_collision(tree: Node3D, pos: Vector3) -> void:
-	var body := StaticBody3D.new()
-	body.position = pos + Vector3(0, 2, 0)
-	var col := CollisionShape3D.new()
-	var cyl := CylinderShape3D.new()
-	cyl.radius = 0.7
-	cyl.height = 4.0
-	col.shape = cyl
-	body.add_child(col)
-	add_child(body)
-
-
-func _add_rock_collision(rock: Node3D, pos: Vector3, height: float) -> void:
-	var body := StaticBody3D.new()
-	body.position = pos + Vector3(0, height * 0.35, 0)
-	var col := CollisionShape3D.new()
-	var sphere := SphereShape3D.new()
-	sphere.radius = height * 0.55
-	col.shape = sphere
-	body.add_child(col)
-	add_child(body)
-
-
-func _build_clouds() -> void:
-	for i in 14:
-		var pos := _random_spot(10.0, WORLD_SIZE * 0.55)
-		pos.y = _rng.randf_range(38.0, 55.0)
-		var name := "cloud_big" if i % 2 == 0 else "cloud_small"
-		var holder := Node3D.new()
-		holder.position = pos
-		var model: Node3D = (load(NATURE + name + ".gltf") as PackedScene).instantiate()
-		holder.add_child(model)
-		model.scale = Vector3.ONE * _rng.randf_range(2.5, 4.0)
-		Toon.apply(model, 0.0)
-		add_child(holder)
-		_clouds.append(holder)
-
-
 func _spawn_player() -> void:
 	var player := CharacterBody3D.new()
 	player.set_script(PLAYER_SCRIPT)
 	player.name = "Hero"
-	player.position = Vector3(0, 0.1, 2.0)
+	player.position = _world.awakening_point() + Vector3(0, 0.3, 2.0)
 	add_child(player)
 
 
 func _process(delta: float) -> void:
 	if _crystal:
 		_crystal.rotation.y += delta * 0.8
-		_crystal.position.y = 3.2 + sin(Time.get_ticks_msec() * 0.0015) * 0.25
-	for c in _clouds:
-		c.position.x += delta * 1.2
-		if c.position.x > WORLD_SIZE * 0.6:
-			c.position.x = -WORLD_SIZE * 0.6
+		_crystal.position.y = _crystal_y + sin(Time.get_ticks_msec() * 0.0015) * 0.25
+	for c in get_tree().get_nodes_in_group("clouds"):
+		c.position.x += delta * 1.5
+		if c.position.x > 300.0:
+			c.position.x = -300.0
 	if _system_panel and _system_timer > 0.0:
 		_system_timer -= delta
 		if _system_timer < 1.5:

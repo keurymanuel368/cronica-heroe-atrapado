@@ -5,7 +5,7 @@ extends RefCounted
 ## coordenadas del mundo, y aplica ese mismo giro al hueso equivalente.
 
 ## hueso de KayKit -> hueso de VRoid (VRM)
-const BONE_MAP := {
+const KAYKIT_TO_VRM := {
 	"hips": "J_Bip_C_Hips",
 	"spine": "J_Bip_C_Spine",
 	"chest": "J_Bip_C_Chest",
@@ -26,6 +26,32 @@ const BONE_MAP := {
 	"toes.r": "J_Bip_R_ToeBase",
 }
 
+## hueso de Mixamo (animaciones humanas de captura de movimiento) -> VRoid
+const MIXAMO_TO_VRM := {
+	"mixamorig:Hips": "J_Bip_C_Hips",
+	"mixamorig:Spine": "J_Bip_C_Spine",
+	"mixamorig:Spine1": "J_Bip_C_Chest",
+	"mixamorig:Spine2": "J_Bip_C_UpperChest",
+	"mixamorig:Neck": "J_Bip_C_Neck",
+	"mixamorig:Head": "J_Bip_C_Head",
+	"mixamorig:LeftShoulder": "J_Bip_L_Shoulder",
+	"mixamorig:LeftArm": "J_Bip_L_UpperArm",
+	"mixamorig:LeftForeArm": "J_Bip_L_LowerArm",
+	"mixamorig:LeftHand": "J_Bip_L_Hand",
+	"mixamorig:RightShoulder": "J_Bip_R_Shoulder",
+	"mixamorig:RightArm": "J_Bip_R_UpperArm",
+	"mixamorig:RightForeArm": "J_Bip_R_LowerArm",
+	"mixamorig:RightHand": "J_Bip_R_Hand",
+	"mixamorig:LeftUpLeg": "J_Bip_L_UpperLeg",
+	"mixamorig:LeftLeg": "J_Bip_L_LowerLeg",
+	"mixamorig:LeftFoot": "J_Bip_L_Foot",
+	"mixamorig:LeftToeBase": "J_Bip_L_ToeBase",
+	"mixamorig:RightUpLeg": "J_Bip_R_UpperLeg",
+	"mixamorig:RightLeg": "J_Bip_R_LowerLeg",
+	"mixamorig:RightFoot": "J_Bip_R_Foot",
+	"mixamorig:RightToeBase": "J_Bip_R_ToeBase",
+}
+
 var source: Skeleton3D
 var target: Skeleton3D
 ## Pares [hueso origen, hueso destino], ordenados de padres a hijos.
@@ -36,21 +62,21 @@ var _order: Array[int] = []
 var _from: Dictionary = {}
 var _src_rest: Dictionary = {}
 var _tgt_rest: Dictionary = {}
-## Giro extra hacia abajo de los brazos: las animaciones vienen de un
-## personaje chibi de cuerpo ancho y dejarían los brazos muy abiertos.
-const ARM_DROP_DEG := 35.0
+## Giro extra hacia abajo de los brazos (`arm_drop_deg`): las animaciones de
+## KayKit son de un personaje chibi de cuerpo ancho y dejarían los brazos
+## muy abiertos.
 var _extra: Dictionary = {}
 var _hip_scale := 1.0
 var _src_hips := -1
 var _tgt_hips := -1
 
 
-func _init(src: Skeleton3D, tgt: Skeleton3D) -> void:
+func _init(src: Skeleton3D, tgt: Skeleton3D, bone_map: Dictionary = KAYKIT_TO_VRM, arm_drop_deg: float = 22.0) -> void:
 	source = src
 	target = tgt
-	for s_name in BONE_MAP:
-		var s := source.find_bone(s_name)
-		var t := target.find_bone(BONE_MAP[s_name])
+	for s_name in bone_map:
+		var s := _find(source, s_name)
+		var t := target.find_bone(bone_map[s_name])
 		if s < 0 or t < 0:
 			continue
 		_pairs.append([s, t])
@@ -62,11 +88,11 @@ func _init(src: Skeleton3D, tgt: Skeleton3D) -> void:
 		var b := target.find_bone(side[0])
 		var rest_dir := target.get_bone_global_rest(target.find_bone(side[0].replace("UpperArm", "LowerArm"))).origin - target.get_bone_global_rest(b).origin
 		var axis := rest_dir.cross(Vector3.DOWN).normalized()
-		_extra[b] = Basis(axis, deg_to_rad(ARM_DROP_DEG))
+		_extra[b] = Basis(axis, deg_to_rad(arm_drop_deg))
 	for b in target.get_bone_count():
 		_order.append(b)
 	_order.sort_custom(func(a, b): return _depth(target, a) < _depth(target, b))
-	_src_hips = source.find_bone("hips")
+	_src_hips = _find(source, bone_map.keys()[0])
 	_tgt_hips = target.find_bone("J_Bip_C_Hips")
 	var src_h := source.get_bone_global_rest(_src_hips).origin.y
 	var tgt_h := target.get_bone_global_rest(_tgt_hips).origin.y
@@ -104,6 +130,13 @@ func apply() -> void:
 	var parent_h := target.get_bone_parent(_tgt_hips)
 	var parent_basis: Basis = globals[parent_h] if parent_h >= 0 else Basis()
 	target.set_bone_pose_position(_tgt_hips, rest + parent_basis.inverse() * off)
+
+
+static func _find(skel: Skeleton3D, bone_name: String) -> int:
+	var i := skel.find_bone(bone_name)
+	if i < 0:
+		i = skel.find_bone(bone_name.replace(":", "_"))
+	return i
 
 
 static func _depth(skel: Skeleton3D, bone: int) -> int:

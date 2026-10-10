@@ -6,22 +6,23 @@ const OUTLINE_COLOR := Color(0.09, 0.07, 0.12)
 static var _outline_cache: Dictionary = {}
 
 
-static func apply(root: Node, outline_width: float = 0.02) -> void:
+static func apply(root: Node, outline_width: float = 0.02, tint: Color = Color.WHITE) -> void:
 	for mesh_instance in _meshes(root):
 		var mesh: Mesh = mesh_instance.mesh
 		if mesh == null:
 			continue
 		for i in mesh.get_surface_count():
 			var source: Material = mesh_instance.get_active_material(i)
-			mesh_instance.set_surface_override_material(i, _toonify(source, outline_width))
+			mesh_instance.set_surface_override_material(i, _toonify(source, outline_width, tint))
 
 
-static func _toonify(source: Material, outline_width: float) -> Material:
+static func _toonify(source: Material, outline_width: float, tint: Color = Color.WHITE) -> Material:
 	var mat: StandardMaterial3D
 	if source is StandardMaterial3D:
 		mat = source.duplicate()
 	else:
 		mat = StandardMaterial3D.new()
+	mat.albedo_color *= tint
 	mat.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
 	mat.specular_mode = BaseMaterial3D.SPECULAR_TOON
 	mat.roughness = 0.85
