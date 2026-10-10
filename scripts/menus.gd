@@ -5,9 +5,9 @@ extends CanvasLayer
 const Rpg := preload("res://scripts/rpg.gd")
 
 const GOLD := Color(0.91, 0.76, 0.42)
-const RUNE := Color(0.44, 0.83, 1.0)
+const RUNE := Color(1.0, 0.86, 0.55)
 const TEXT := Color(0.91, 0.95, 1.0)
-const DIM := Color(0.6, 0.66, 0.75)
+const DIM := Color(0.86, 0.78, 0.64)
 
 var player: Node
 var main: Node
@@ -102,11 +102,11 @@ func _button(text: String, enabled := true) -> Button:
 	b.add_theme_font_size_override("font_size", 16)
 	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
 		var sb := StyleBoxFlat.new()
-		sb.bg_color = Color(0.1, 0.22, 0.42, 0.9) if state != "disabled" else Color(0.08, 0.1, 0.16, 0.8)
+		sb.bg_color = Color(0.36, 0.22, 0.11, 0.95) if state != "disabled" else Color(0.24, 0.17, 0.12, 0.8)
 		if state == "hover" or state == "focus":
-			sb.bg_color = Color(0.16, 0.32, 0.58, 0.95)
-		sb.border_color = GOLD if state == "hover" else Color(0.44, 0.83, 1.0, 0.6)
-		sb.set_border_width_all(1)
+			sb.bg_color = Color(0.52, 0.33, 0.15, 0.98)
+		sb.border_color = GOLD if state == "hover" else Color(0.78, 0.58, 0.3, 0.8)
+		sb.set_border_width_all(2)
 		sb.set_corner_radius_all(4)
 		sb.content_margin_left = 12
 		sb.content_margin_right = 12
@@ -146,8 +146,8 @@ func _section(text: String) -> void:
 
 func open(kind: String) -> void:
 	_current = kind
-	_panel.add_theme_stylebox_override("panel", _wood_style if kind == "board" else _system_style)
-	_title.add_theme_color_override("font_color", Color(1.0, 0.9, 0.65) if kind == "board" else RUNE)
+	_panel.add_theme_stylebox_override("panel", _wood_style)
+	_title.add_theme_color_override("font_color", Color(1.0, 0.9, 0.65))
 	refresh()
 	_panel.visible = true
 	get_tree().paused = true

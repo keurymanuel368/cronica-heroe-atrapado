@@ -10,7 +10,7 @@ const PROJECTILE := preload("res://scripts/projectile.gd")
 const Rpg := preload("res://scripts/rpg.gd")
 
 const WALK_SPEED := 3.4
-const RUN_SPEED := 7.2
+const RUN_SPEED := 7.8
 const BLOCK_SPEED := 1.6
 const ACCELERATION := 14.0
 const AIR_CONTROL := 0.35
@@ -108,6 +108,9 @@ var _dash_hit: Array = []
 var _coyote := 0.0
 var _aura: Node3D
 var _shake := 0.0
+## Caballo que monta (null si va a pie).
+var horse: Node3D = null
+var _lean := 0.0
 ## Ataque pedido mientras no se podía (recibiendo un golpe, en el aire):
 ## se lanza en cuanto se pueda, si no pasó mucho tiempo.
 var _buffered := ""
@@ -118,6 +121,8 @@ func _ready() -> void:
 	add_to_group("player")
 	collision_layer = 2
 	collision_mask = 1 | 4
+	floor_max_angle = deg_to_rad(52.0)
+	floor_snap_length = 0.6
 	_build_body()
 	_build_camera()
 	spawn_point = global_position
@@ -285,6 +290,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif event.is_action_pressed("jump"):
 		_jump_requested = true
+	elif horse and (event.is_action_pressed("attack_light") or event.is_action_pressed("attack_heavy") or event.is_action_pressed("dodge")
+			or event.is_action_pressed("magic") or event.is_action_pressed("special") or event.is_action_pressed("ultimate")):
+		return
 	elif event.is_action_pressed("cheer") and is_on_floor() and _attack.is_empty():
 		_play_once("Cheer")
 	elif event.is_action_pressed("attack_light"):
@@ -346,11 +354,16 @@ func _physics_process(delta: float) -> void:
 	var target_speed := RUN_SPEED if running else WALK_SPEED
 	if awakened > 0.0:
 		target_speed *= 1.3
+	if horse:
+		target_speed = 18.0 if running else 10.0
+		_blocking = false
 	_update_powers(delta)
 	_swimming = global_position.y < SWIM_HEIGHT and global_position.y > -60.0
 	if _swimming:
 		target_speed *= 0.6
 		_blocking = false
+		if horse:
+			dismount()
 	if _blocking:
 		target_speed = BLOCK_SPEED
 	var wanted := direction * target_speed
@@ -413,6 +426,7 @@ func _physics_process(delta: float) -> void:
 		_play("Jump_Start", 0.05)
 	_jump_requested = false
 
+	_step_up(delta)
 	move_and_slide()
 
 	var flat := Vector3(velocity.x, 0, velocity.z)
@@ -422,12 +436,34 @@ func _physics_process(delta: float) -> void:
 	elif flat.length() > 0.2 and _attack.is_empty() and _dodge_time <= 0.0:
 		_model.rotation.y = lerp_angle(_model.rotation.y, atan2(flat.x, flat.z), TURN_SPEED * delta)
 
+	if horse:
+		horse.global_position = global_position
+		horse.rotation.y = _model.rotation.y
+		horse.animate(flat.length(), delta)
+	_update_lean(flat, delta)
 	_update_animation(flat.length())
 	_was_on_floor = is_on_floor()
 
 	if global_position.y < spawn_point.y - 30.0:
 		global_position = spawn_point
 		velocity = Vector3.ZERO
+
+
+## Sube solo escalones y bordes bajos (puente, aceras) sin tener que saltar.
+func _step_up(delta: float) -> void:
+	if not is_on_floor() or _swimming:
+		return
+	var motion := Vector3(velocity.x, 0, velocity.z) * delta
+	if motion.length() < 0.01:
+		return
+	motion = motion.normalized() * maxf(motion.length(), 0.15)
+	if not test_move(global_transform, motion):
+		return
+	var lifted := global_transform.translated(Vector3(0, 0.55, 0))
+	if test_move(global_transform, Vector3(0, 0.55, 0)) or test_move(lifted, motion):
+		return
+	global_position.y += 0.55
+	velocity.y = maxf(velocity.y, 0.0)
 
 
 func _update_camera(delta: float) -> void:
@@ -447,7 +483,47 @@ func _update_camera(delta: float) -> void:
 		_camera.v_offset = 0.0
 
 
+## Se inclina un poco al girar corriendo y hacia delante al esprintar.
+func _update_lean(flat: Vector3, delta: float) -> void:
+	var turn := 0.0
+	if flat.length() > 3.0 and _attack.is_empty() and _dodge_time <= 0.0:
+		var want := atan2(flat.x, flat.z)
+		turn = wrapf(want - _model.rotation.y, -PI, PI)
+	_lean = lerpf(_lean, clampf(-turn * 0.35, -0.3, 0.3), 1.0 - exp(-8.0 * delta))
+	_model.rotation.z = _lean if horse == null else _lean * 0.5
+	var pitch := 0.12 if flat.length() > WALK_SPEED + 1.0 and horse == null and is_on_floor() else 0.0
+	_model.rotation.x = lerpf(_model.rotation.x, pitch, 1.0 - exp(-6.0 * delta))
+
+
+func mount(h: Node3D) -> void:
+	if horse or not is_alive():
+		return
+	horse = h
+	h.set_ridden(true)
+	_attack = {}
+	global_position = h.global_position + Vector3(0, 0.3, 0)
+	_model.rotation.y = h.rotation.y
+	_model.position.y = h.SADDLE_HEIGHT - 0.45
+	_zoom = maxf(_zoom, 6.5)
+	_play("Sit_Chair_Idle", 0.2)
+
+
+func dismount() -> void:
+	if horse == null:
+		return
+	var h := horse
+	horse = null
+	h.set_ridden(false)
+	_model.position.y = 0.0
+	var right := Vector3(cos(_model.rotation.y), 0, -sin(_model.rotation.y))
+	global_position += right * 1.3 + Vector3(0, 0.3, 0)
+	velocity = Vector3.ZERO
+
+
 func _update_animation(speed: float) -> void:
+	if horse:
+		_play("Sit_Chair_Idle", 0.2)
+		return
 	if _swimming and _attack.is_empty():
 		_play("Walking_A" if speed > 0.3 else "Jump_Idle", 0.2)
 		_anim.speed_scale = 0.7
@@ -469,6 +545,20 @@ func _update_animation(speed: float) -> void:
 		return
 	if _anim.current_animation == "Jump_Land" and _anim.is_playing() and speed < 0.5:
 		return
+	if target and speed > 0.3:
+		var fwd := Vector3(sin(_model.rotation.y), 0, cos(_model.rotation.y))
+		var right := fwd.cross(Vector3.UP)
+		var v := Vector3(velocity.x, 0, velocity.z).normalized()
+		var f := fwd.dot(v)
+		var r := right.dot(v)
+		if f < -0.5:
+			_play("Walking_Backwards", 0.15)
+			_anim.speed_scale = clamp(speed / WALK_SPEED, 0.7, 1.5)
+			return
+		if absf(r) > 0.6:
+			_play("Running_Strafe_Right" if r < 0 else "Running_Strafe_Left", 0.15)
+			_anim.speed_scale = clamp(speed / RUN_SPEED * 1.3, 0.7, 1.4)
+			return
 	if speed < 0.3:
 		_play(Weapons.DATA[weapon].idle, 0.2)
 	elif speed < WALK_SPEED + 0.6:
@@ -476,7 +566,9 @@ func _update_animation(speed: float) -> void:
 		_anim.speed_scale = clamp(speed / WALK_SPEED, 0.6, 1.3)
 		return
 	else:
-		_play("Running_A", 0.2)
+		_play("Running_A", 0.15)
+		_anim.speed_scale = clamp(speed / RUN_SPEED * 1.1, 0.8, 1.3)
+		return
 	_anim.speed_scale = 1.0
 
 
@@ -843,6 +935,8 @@ func take_hit(damage: int, from: Vector3, _attacker: Node3D = null) -> void:
 		Fx.number(get_parent(), global_position + Vector3(0, 2.1, 0), "Inmune", Color(0.6, 0.85, 1.0), 44)
 		return
 	_since_combat = 0.0
+	if horse:
+		dismount()
 	var amount := maxi(1, damage - total_def() / 2)
 	if awakened > 0.0:
 		amount = maxi(1, amount / 2)

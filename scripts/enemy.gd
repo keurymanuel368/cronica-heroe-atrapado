@@ -205,8 +205,9 @@ func _physics_process(delta: float) -> void:
 	var dist := INF
 	if player and player.is_alive():
 		to_player = player.global_position - global_position
+		var dy := absf(to_player.y)
 		to_player.y = 0
-		dist = to_player.length()
+		dist = to_player.length() if dy < 25.0 else INF
 
 	match _state:
 		State.IDLE:

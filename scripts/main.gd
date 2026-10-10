@@ -26,6 +26,10 @@ var _zone_timer := 0.0
 var _zone := ""
 var _dungeon: Node3D
 var _in_dungeon := false
+var _interiors: Node3D
+var _big_map: Control
+## Sala en la que está el héroe ({} si está fuera).
+var _inside: Dictionary = {}
 var _boss_defeated := false
 var _menus: CanvasLayer
 var _escort: Node3D
@@ -49,6 +53,15 @@ func _ready() -> void:
 	_dungeon = preload("res://scripts/dungeon.gd").new()
 	add_child(_dungeon)
 	_dungeon.build()
+	_interiors = preload("res://scripts/interiors.gd").new()
+	add_child(_interiors)
+	_interiors.build(_world)
+	for p in [_world.VILLAGE + Vector2(-5, 27), _world.AWAKENING + Vector2(7, 3), Vector2(36, -182), _world.VILLAGE + Vector2(5, 27)]:
+		var horse := Node3D.new()
+		horse.set_script(preload("res://scripts/horse.gd"))
+		horse.position = _world.surface(p.x, p.y)
+		horse.rotation.y = randf() * TAU
+		add_child(horse)
 	add_to_group("boss_listeners")
 	_clock = preload("res://scripts/daynight.gd").new()
 	_clock.sun = _sun
@@ -79,6 +92,14 @@ func _ready() -> void:
 	minimap.offset_bottom = 244
 	_hud.add_child(minimap)
 	minimap.setup(_world, _player, self)
+	_big_map = Control.new()
+	_big_map.set_script(preload("res://scripts/minimap.gd"))
+	_big_map.full = true
+	_big_map.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_big_map.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_big_map.visible = "--map" in OS.get_cmdline_user_args()
+	_hud.add_child(_big_map)
+	_big_map.setup(_world, _player, self, minimap.texture())
 	_menus = preload("res://scripts/menus.gd").new()
 	_menus.player = _player
 	_menus.main = self
@@ -111,6 +132,7 @@ func _setup_input() -> void:
 	_bind("jump", [KEY_SPACE], [JOY_BUTTON_A])
 	_bind("cheer", [KEY_G], [])
 	_bind("toggle_help", [KEY_H], [JOY_BUTTON_BACK])
+	_bind("map", [KEY_M], [])
 	_bind("fullscreen", [KEY_F11], [])
 	_bind("attack_light", [KEY_J], [JOY_BUTTON_X], [], [MOUSE_BUTTON_LEFT])
 	_bind("attack_heavy", [KEY_E, KEY_K], [JOY_BUTTON_Y])
@@ -157,6 +179,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("fullscreen"):
 		var full := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
+	elif event.is_action_pressed("map"):
+		_big_map.visible = not _big_map.visible
 	elif event.is_action_pressed("toggle_help"):
 		_help_panel.visible = not _help_panel.visible
 	elif event.is_action_pressed("skills_menu") and not _menus.is_open():
@@ -334,6 +358,8 @@ func save_game() -> void:
 	var pos := _player.global_position
 	if _in_dungeon:
 		pos = _gate_point() + Vector3(-4, 0, 0)
+	elif not _inside.is_empty():
+		pos = _inside.out
 	SaveGame.save(_player, _clock, pos, {"boss_defeated": _boss_defeated})
 
 
@@ -343,6 +369,19 @@ func _gate_point() -> Vector3:
 
 ## Puertas que el héroe puede usar con F: [texto, acción] o vacío.
 func portal_prompt() -> String:
+	if _player.horse:
+		return "Bajar del caballo"
+	if not _inside.is_empty():
+		if _player.global_position.distance_to(_inside.exit) < 3.0:
+			return "Salir: " + _inside.name
+		return ""
+	if not _in_dungeon:
+		var h := _near_horse()
+		if h:
+			return "Montar a caballo"
+		var room := _near_door()
+		if not room.is_empty():
+			return "Entrar: " + room.name
 	if _in_dungeon:
 		if _player.global_position.distance_to(_dungeon.start) < 3.5:
 			return "Salir de la mazmorra"
@@ -351,7 +390,62 @@ func portal_prompt() -> String:
 	return ""
 
 
+func _near_horse() -> Node3D:
+	for h in get_tree().get_nodes_in_group("horses"):
+		if not h.ridden and h.global_position.distance_to(_player.global_position) < 3.0:
+			return h
+	return null
+
+
+func _near_door() -> Dictionary:
+	for room in _interiors.rooms:
+		var d: Vector3 = room.door - _player.global_position
+		d.y *= 0.3
+		if d.length() < 3.2:
+			return room
+	return {}
+
+
+func indoor_name() -> String:
+	return "" if _inside.is_empty() else String(_inside.name)
+
+
+func _enter_room(room: Dictionary) -> void:
+	_inside = room
+	_clock.indoors = true
+	_player.global_position = room.spawn
+	_player.spawn_point = room.spawn
+	_player.velocity = Vector3.ZERO
+	_player.face_yaw(0.0)
+	_hud.show_zone(room.name)
+
+
+func _exit_room() -> void:
+	var room := _inside
+	_inside = {}
+	_clock.indoors = false
+	_player.global_position = room.out + Vector3(0, 0.4, 0)
+	_player.spawn_point = _world.awakening_point() + Vector3(0, 0.3, 2.0)
+	_player.velocity = Vector3.ZERO
+	_player.face_yaw(room.out_yaw)
+
+
 func use_portal() -> void:
+	if _player.horse:
+		_player.dismount()
+		return
+	if not _inside.is_empty():
+		_exit_room()
+		return
+	if not _in_dungeon:
+		var h := _near_horse()
+		if h:
+			_player.mount(h)
+			return
+		var room := _near_door()
+		if not room.is_empty():
+			_enter_room(room)
+			return
 	if _in_dungeon:
 		_exit_dungeon()
 	else:
@@ -503,7 +597,7 @@ func _process(delta: float) -> void:
 	_zone_timer -= delta
 	if _zone_timer <= 0.0 and _hud:
 		_zone_timer = 0.5
-		var z := "Mazmorra del Rey Esqueleto" if _in_dungeon else zone_at(_player.global_position)
+		var z := "Mazmorra del Rey Esqueleto" if _in_dungeon else (String(_inside.name) if not _inside.is_empty() else zone_at(_player.global_position))
 		if z != _zone:
 			if _zone != "":
 				_hud.show_zone(z)
@@ -527,15 +621,15 @@ func _process(delta: float) -> void:
 
 func _panel_style() -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.08, 0.16, 0.31, 0.78)
-	sb.border_color = Color(0.44, 0.83, 1.0, 0.8)
+	sb.bg_color = Color(0.2, 0.12, 0.06, 0.82)
+	sb.border_color = Color(0.78, 0.58, 0.3, 0.95)
 	sb.set_border_width_all(2)
 	sb.set_corner_radius_all(4)
 	sb.content_margin_left = 18
 	sb.content_margin_right = 18
 	sb.content_margin_top = 12
 	sb.content_margin_bottom = 12
-	sb.shadow_color = Color(0.44, 0.83, 1.0, 0.25)
+	sb.shadow_color = Color(0, 0, 0, 0.45)
 	sb.shadow_size = 8
 	return sb
 
@@ -554,13 +648,13 @@ func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	var gold := Color(0.91, 0.76, 0.42)
-	var rune := Color(0.44, 0.83, 1.0)
+	var rune := Color(1.0, 0.86, 0.55)
 
 	var title := VBoxContainer.new()
 	title.position = Vector2(24, 20)
 	title.add_child(_label("CRÓNICA DEL HÉROE ATRAPADO", 26, gold))
 	var version := FileAccess.get_file_as_string("res://version.txt").strip_edges()
-	title.add_child(_label("Fase 4 · Gremio y misiones · versión %s" % version, 16, rune))
+	title.add_child(_label("Mundo vivo · versión %s" % version, 16, rune))
 	layer.add_child(title)
 
 	_help_panel = PanelContainer.new()
@@ -584,6 +678,7 @@ func _build_hud() -> void:
 		"Tab   Fijar objetivo   ·   C   Ventana de estado",
 		"1   Poder especial   ·   2   Despertar",
 		"3   Cambiar de arma   ·   G   Celebrar",
+		"M   Mapa   ·   F   Caballo / casas",
 		"F   Hablar / Entrar   ·   F5   Guardar partida",
 		"R   Lanzar magia   ·   T   Cambiar elemento",
 		"Z   Poción   ·   X   Éter   ·   I   Inventario",

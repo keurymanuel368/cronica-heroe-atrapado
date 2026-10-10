@@ -21,6 +21,10 @@ func _ready() -> void:
 			for item in arg.trim_prefix("--tap=").split(","):
 				var parts := item.split("@")
 				_taps.append([float(parts[1]), parts[0]])
+		elif arg.begins_with("--hold="):
+			for item in arg.trim_prefix("--hold=").split(","):
+				var parts := item.split("@")
+				_taps.append([float(parts[1]), parts[0], true])
 		elif arg.begins_with("--capture-delay="):
 			_delay = float(arg.trim_prefix("--capture-delay="))
 	if _path == "":
@@ -32,6 +36,9 @@ func _process(delta: float) -> void:
 	for tap in _taps.duplicate():
 		if _time >= tap[0]:
 			_taps.erase(tap)
+			if tap.size() > 2:
+				Input.action_press(tap[1])
+				continue
 			for pressed in [true, false]:
 				var e := InputEventAction.new()
 				e.action = tap[1]

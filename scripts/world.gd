@@ -45,23 +45,23 @@ const ZONES := [
 
 ## Gente del pueblo. `at` es relativo al centro de la aldea.
 const VILLAGERS := [
-	{"name": "Mira", "role": "Recepcionista del Gremio", "model": "res://assets/kaykit/characters/Rogue.glb", "at": Vector2(8, 6), "action": "guild",
+	{"name": "Mira", "role": "Recepcionista del Gremio", "model": "res://assets/kaykit/characters/Rogue.glb", "at": Vector2(7, 9), "action": "guild",
 		"lines": ["¡Bienvenido al Gremio de Aventureros de Rivel!",
 			"¿Un viajero sin registro? Qué raro... Te trajo el Sistema, ¿verdad? Lo noto en tus ojos.",
 			"Para aceptar encargos necesitas estar registrado. Empiezas en el rango F, el más bajo, y subes cumpliendo misiones hasta el rango S.",
 			"Listo, ya eres aventurero del gremio. ¡Echa un vistazo al tablón!"]},
-	{"name": "Tomás", "role": "Posadero · La Jarra Dorada", "model": "res://assets/kaykit/characters/Barbarian.glb", "at": Vector2(-7, -2), "action": "rest",
+	{"name": "Tomás", "role": "Posadero · La Jarra Dorada", "model": "res://assets/kaykit/characters/Barbarian.glb", "at": Vector2(-6, 3), "action": "rest",
 		"lines": ["¡Bienvenido a La Jarra Dorada! Pareces agotado, muchacho.",
 			"Tengo una cama caliente arriba. Descansa: mañana será otro día."]},
-	{"name": "Borin", "role": "Herrero", "model": "res://assets/kaykit/characters/Barbarian.glb", "gear": ["2H_Axe"], "at": Vector2(9, -12), "action": "smith",
+	{"name": "Borin", "role": "Herrero", "model": "res://assets/kaykit/characters/Barbarian.glb", "gear": ["2H_Axe"], "at": Vector2(8, -16), "action": "smith",
 		"lines": ["Esa arma que llevas... no la forjó nadie de este mundo.",
 			"Tráeme oro y huesos de esqueleto y te la mejoraré.",
 			"Dicen que en el fondo de la mazmorra duerme un rey hecho de huesos. Yo no me acercaría."]},
-	{"name": "Pip", "role": "Mercader", "model": "res://assets/kaykit/characters/Rogue_Hooded.glb", "at": Vector2(-8, -16), "action": "shop",
+	{"name": "Pip", "role": "Mercader", "model": "res://assets/kaykit/characters/Rogue_Hooded.glb", "at": Vector2(-6, -21), "action": "shop",
 		"lines": ["¡Pociones, mapas, recuerdos de la capital!",
 			"Un consejo gratis: el bosque del oeste se pone feo de noche. Los esqueletos de allí lanzan magia.",
 			"¿Qué te llevas?"]},
-	{"name": "Abuelo Ered", "role": "Anciano de la aldea", "model": "res://assets/kaykit/characters/Mage.glb", "gear": ["2H_Staff"], "at": Vector2(-15, 4),
+	{"name": "Abuelo Ered", "role": "Anciano de la aldea", "model": "res://assets/kaykit/characters/Mage.glb", "gear": ["2H_Staff"], "at": Vector2(-15, 8),
 		"lines": ["Tú también despertaste junto al cristal azul, ¿eh?",
 			"Hace cien años llegó otro como tú. Hablaba de ventanas flotantes y de \"niveles\".",
 			"Subió y subió, venció al Rey Esqueleto... y un día simplemente desapareció.",
@@ -119,6 +119,7 @@ var _check := 0.0
 
 
 func _process(delta: float) -> void:
+	_update_gate(delta)
 	_check -= delta
 	if _check > 0.0:
 		return
@@ -147,7 +148,7 @@ func height(x: float, z: float) -> float:
 	var h := _raw_height(x, z)
 	h = _flatten(h, x, z, AWAKENING, _awakening_height, 7.0, 14.0)
 	h = _flatten(h, x, z, ARENA, _arena_height, ARENA_RADIUS + 2.0, ARENA_RADIUS + 12.0)
-	h = _flatten(h, x, z, CASTLE, CASTLE_HEIGHT, 30.0, 46.0)
+	h = _flatten(h, x, z, CASTLE, CASTLE_HEIGHT, 38.0, 52.0)
 	h = _flatten(h, x, z, VILLAGE, VILLAGE_HEIGHT, 24.0, 40.0)
 	return h
 
@@ -450,26 +451,87 @@ func _build_rocks() -> void:
 
 # --- Castillo y pueblo ----------------------------------------------------
 
+var castle_doors: Array = []
+var _gate_blocker: CollisionShape3D
+var _gate_open := 0.0
+
+
 func _build_castle() -> void:
 	var c := Vector3(CASTLE.x, CASTLE_HEIGHT, CASTLE.y)
 	_place(BUILD + "building_castle_blue.gltf", c, 11.0, 0.02).rotation.y = PI
-	_add_box(c + Vector3(0, 8, 0), Vector3(16, 16, 16))
-	# Muralla en anillo con torres.
-	var radius := 26.0
-	var segments := 16
-	for i in segments:
-		var a := TAU * i / segments
-		var pos := c + Vector3(cos(a) * radius, 0, sin(a) * radius)
-		var gate := i == 4
-		var wall := _place(BUILD + ("wall_straight_gate.gltf" if gate else "wall_straight.gltf"), pos, 6.0, 0.02)
-		wall.rotation.y = -a + PI / 2.0
-		if i % 4 == 2:
-			_place(BUILD + "building_tower_A_blue.gltf", pos, 7.0, 0.02)
-		if not gate:
-			_add_box(pos + Vector3(0, 3, 0), Vector3(10.5, 6, 2.5), -a + PI / 2.0)
-	for p in [Vector3(-12, 0, -8), Vector3(12, 0, -10), Vector3(-14, 0, 10), Vector3(14, 0, 9)]:
-		_place(BUILD + "building_home_A_blue.gltf", c + p, 6.0, 0.02).rotation.y = _rng.randf() * TAU
-	_place(BUILD + "flag_blue.gltf", c + Vector3(0, 0, 22), 6.0, 0.02)
+	_add_box(c + Vector3(0, 8, -1), Vector3(19, 16, 22))
+	# Muralla cuadrada: 5 tramos por lado, torres en las esquinas y la puerta
+	# en el centro del lado sur, mirando a la aldea.
+	var scale := 5.0
+	var piece := 2.0 * scale
+	var half := piece * 2.5
+	for side in 4:
+		var yaw := side * PI / 2.0
+		var basis := Basis(Vector3.UP, yaw)
+		for i in 5:
+			var local := Vector3(-half + piece * (i + 0.5), 0, half)
+			var pos := c + basis * local
+			pos.y = minf(height(pos.x, pos.z), CASTLE_HEIGHT + 1.0) - 0.2
+			var gate := side == 0 and i == 2
+			var wall := _place(BUILD + ("wall_straight_gate.gltf" if gate else "wall_straight.gltf"), pos, scale, 0.02)
+			wall.rotation.y = yaw
+			if gate:
+				_setup_gate(wall, pos, yaw)
+			else:
+				_add_box(pos + Vector3(0, 3, 0), Vector3(piece + 0.2, 6, 2.6), yaw)
+		var corner := c + basis * Vector3(half, 0, half)
+		corner.y = minf(height(corner.x, corner.z), CASTLE_HEIGHT + 1.0) - 0.2
+		_place(BUILD + "building_tower_A_blue.gltf", corner, 7.0, 0.02)
+		_add_cylinder(corner + Vector3(0, 4, 0), 3.4, 8.0)
+	for p in [Vector3(-14, 0, -12), Vector3(14, 0, -12), Vector3(-15, 0, 12), Vector3(15, 0, 12)]:
+		var hp: Vector3 = c + p
+		hp.y = height(hp.x, hp.z)
+		_place(BUILD + "building_home_A_blue.gltf", hp, 6.0, 0.02).rotation.y = PI if p.z < 0 else 0.0
+		_add_box(hp + Vector3(0, 3, 0), Vector3(5, 6, 5))
+	for x in [-6.0, 6.0]:
+		_place(BUILD + "flag_blue.gltf", c + Vector3(x, 0, half - 4), 6.0, 0.02)
+
+
+func _setup_gate(wall: Node3D, pos: Vector3, yaw: float) -> void:
+	for door in wall.find_children("*_door_*", "MeshInstance3D", true, false):
+		castle_doors.append(door)
+	# Los lados del portón tienen colisión; el hueco solo mientras está cerrado.
+	for sx in [-1.0, 1.0]:
+		_add_box(pos + Basis(Vector3.UP, yaw) * Vector3(sx * 3.6, 3.5, 0), Vector3(2.8, 7, 2.6), yaw)
+	var body := StaticBody3D.new()
+	body.position = pos + Vector3(0, 2.5, 0)
+	body.rotation.y = yaw
+	_gate_blocker = CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4.6, 5, 0.8)
+	_gate_blocker.shape = box
+	body.add_child(_gate_blocker)
+	add_child(body)
+	var label := Label3D.new()
+	label.text = "Castillo de Aurelia"
+	label.font_size = 64
+	label.outline_size = 12
+	label.pixel_size = 0.01
+	label.modulate = Color(1.0, 0.9, 0.6)
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.position = pos + Vector3(0, 9.0, 0)
+	add_child(label)
+
+
+## Las puertas del castillo se abren cuando el héroe se acerca.
+func _update_gate(delta: float) -> void:
+	if castle_doors.is_empty():
+		return
+	var player: Node3D = get_tree().get_first_node_in_group("player")
+	if player == null:
+		return
+	var gate_pos := Vector3(CASTLE.x, player.global_position.y, CASTLE.y + 25.0)
+	var near := player.global_position.distance_to(gate_pos) < 14.0
+	_gate_open = move_toward(_gate_open, 1.0 if near else 0.0, delta * 0.8)
+	var angle := smoothstep(0.0, 1.0, _gate_open) * deg_to_rad(100.0)
+	for door in castle_doors:
+		door.rotation.y = angle if String(door.name).ends_with("left") else -angle
+	_gate_blocker.disabled = _gate_open > 0.5
 
 
 func _build_village() -> void:
@@ -510,7 +572,7 @@ func _build_village() -> void:
 ## Puente: tablones en arco de orilla a orilla, con barandillas. Cada tramo
 ## sigue la altura del terreno en las puntas, así se sube caminando.
 func _build_bridge() -> void:
-	var half := 13.0
+	var half := 17.0
 	var width := 4.6
 	var wood := StandardMaterial3D.new()
 	wood.albedo_color = Color(0.55, 0.36, 0.2)
@@ -519,12 +581,14 @@ func _build_bridge() -> void:
 	dark.albedo_color = Color(0.38, 0.24, 0.13)
 	dark.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
 	var points: Array[Vector3] = []
-	var steps := 26
+	var steps := 34
 	for i in steps + 1:
 		var z := BRIDGE.y - half + 2.0 * half * i / steps
 		var d := absf(z - BRIDGE.y) / half
 		var arch := WATER_LEVEL + 1.4 + 0.9 * (1.0 - d * d)
-		var y := maxf(arch, height(BRIDGE.x, z) + 0.05)
+		# Los extremos bajan suavemente hasta el suelo: se sube caminando.
+		var ground := height(BRIDGE.x, z) - 0.08
+		var y := maxf(lerpf(arch, ground, smoothstep(0.6, 1.0, d)), ground)
 		points.append(Vector3(BRIDGE.x, y, z))
 	for i in steps:
 		var a := points[i]
@@ -820,14 +884,13 @@ func _build_village_life() -> void:
 		_add_lamp(p)
 	# Vallas de madera en las afueras del pueblo.
 	for side in [-1.0, 1.0]:
-		for i in 7:
-			var p := VILLAGE + Vector2(side * 26.0, -21.0 + i * 6.0)
-			var f := _place(BUILD + "fence_wood_straight.gltf", surface(p.x, p.y), 3.2, 0.02)
-			f.rotation.y = PI / 2.0
+		for i in 12:
+			var p := VILLAGE + Vector2(side * 26.0, -21.0 + i * 3.6)
+			_fence(surface(p.x, p.y), 0.0)
 	for i in 5:
 		for side in [-1.0, 1.0]:
 			var p := VILLAGE + Vector2(side * (8.0 + i * 3.6), 26.0)
-			_place(BUILD + "fence_wood_straight.gltf", surface(p.x, p.y), 3.2, 0.02)
+			_fence(surface(p.x, p.y), PI / 2.0)
 	# Mercadillo: cajas, sacos y barriles junto al mercader y la herrería.
 	var props := [["barrel", Vector2(-9, -19)], ["barrel", Vector2(-10, -20)], ["crate_A_big", Vector2(-6, -19)],
 		["sack", Vector2(-5, -17)], ["crate_A_big", Vector2(11, -15)], ["barrel", Vector2(11, -9)],
@@ -843,6 +906,13 @@ func _build_village_life() -> void:
 	# Luciérnagas de noche en el bosque, en el río y en el pueblo.
 	for p in [FOREST, FOREST + Vector2(25, 20), FOREST + Vector2(-20, -25), Vector2(10, -64), VILLAGE + Vector2(0, 20)]:
 		_add_fireflies(surface(p.x, p.y))
+
+
+## Tramo de valla de 3,6 m centrado en `pos` (el modelo trae el centro desplazado).
+func _fence(pos: Vector3, yaw: float) -> void:
+	var holder := _place(BUILD + "fence_wood_straight.gltf", pos, 3.1, 0.02)
+	holder.get_child(0).position.x = 1.05 * 3.1
+	holder.rotation.y = yaw
 
 
 func _add_lamp(p: Vector2) -> void:

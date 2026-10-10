@@ -6,8 +6,8 @@ const Weapons := preload("res://scripts/weapons.gd")
 const Rpg := preload("res://scripts/rpg.gd")
 
 const GOLD := Color(0.91, 0.76, 0.42)
-const RUNE := Color(0.44, 0.83, 1.0)
-const TEXT := Color(0.91, 0.95, 1.0)
+const RUNE := Color(1.0, 0.86, 0.55)
+const TEXT := Color(1.0, 0.96, 0.88)
 
 var player: Node
 var main: Node
@@ -77,15 +77,15 @@ func setup(p: Node, loaded := false) -> void:
 
 func _style(alpha := 0.78) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.08, 0.16, 0.31, alpha)
-	sb.border_color = Color(0.44, 0.83, 1.0, 0.8)
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(4)
+	sb.bg_color = Color(0.2, 0.12, 0.06, alpha)
+	sb.border_color = Color(0.78, 0.58, 0.3, 0.95)
+	sb.set_border_width_all(3)
+	sb.set_corner_radius_all(6)
 	sb.content_margin_left = 14
 	sb.content_margin_right = 14
 	sb.content_margin_top = 10
 	sb.content_margin_bottom = 10
-	sb.shadow_color = Color(0.44, 0.83, 1.0, 0.25)
+	sb.shadow_color = Color(0, 0, 0, 0.45)
 	sb.shadow_size = 6
 	return sb
 
@@ -105,8 +105,8 @@ func _bar(color: Color, width: float, height: float) -> ProgressBar:
 	bar.show_percentage = false
 	bar.custom_minimum_size = Vector2(width, height)
 	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.03, 0.05, 0.12, 0.85)
-	bg.border_color = Color(0.44, 0.83, 1.0, 0.5)
+	bg.bg_color = Color(0.08, 0.05, 0.03, 0.85)
+	bg.border_color = Color(0.78, 0.58, 0.3, 0.6)
 	bg.set_border_width_all(1)
 	bg.set_corner_radius_all(3)
 	var fg := StyleBoxFlat.new()
