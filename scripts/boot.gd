@@ -57,7 +57,9 @@ func _on_version(result: int, code: int, _headers: PackedStringArray, body: Pack
 	_http.timeout = DOWNLOAD_TIMEOUT
 	_http.download_file = LOCAL_PACK + ".tmp"
 	_http.request_completed.connect(_on_pack)
-	if _http.request(_base_url + "juego.pck?v=%d" % _remote) != OK:
+	# Celular y tablet usan su propio paquete (texturas para Android).
+	var pack := "juego_android.pck" if OS.has_feature("android") else "juego.pck"
+	if _http.request(_base_url + pack + "?v=%d" % _remote) != OK:
 		_start_game()
 
 

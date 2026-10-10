@@ -175,6 +175,17 @@ func _build_weapon_box() -> void:
 	panel.offset_top = -24
 	panel.offset_bottom = -24
 	panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	if preload("res://scripts/platform.gd").is_touch():
+		# En pantalla táctil la esquina derecha es de los botones.
+		panel.anchor_left = 0.0
+		panel.anchor_right = 0.0
+		panel.anchor_top = 0.0
+		panel.anchor_bottom = 0.0
+		panel.offset_left = 24
+		panel.offset_right = 380
+		panel.offset_top = 200
+		panel.offset_bottom = 200
+		panel.grow_vertical = Control.GROW_DIRECTION_END
 	var v := VBoxContainer.new()
 	v.add_child(_label("ARMA", 13, RUNE))
 	_weapon_label = _label("", 16, GOLD)

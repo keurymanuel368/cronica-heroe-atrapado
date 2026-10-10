@@ -81,6 +81,7 @@ var _pivot: Node3D
 var _arm: SpringArm3D
 var _camera: Camera3D
 var _yaw := 0.0
+var _touch: bool = preload("res://scripts/platform.gd").is_touch()
 var _pitch := deg_to_rad(-14.0)
 var _zoom := 5.0
 var _was_on_floor := true
@@ -274,7 +275,16 @@ func _build_camera() -> void:
 	_arm.add_child(_camera)
 
 
+## Cámara con el dedo (pantalla táctil).
+func touch_look(rel: Vector2) -> void:
+	if target == null:
+		_yaw -= rel.x
+	_pitch = clamp(_pitch - rel.y, PITCH_MIN, PITCH_MAX)
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if _touch and (event is InputEventMouseButton or event is InputEventMouseMotion):
+		return
 	if event is InputEventMouseButton and event.pressed:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and event.button_index == MOUSE_BUTTON_LEFT:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED

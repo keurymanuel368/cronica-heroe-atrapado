@@ -303,7 +303,7 @@ func _build_grass() -> void:
 
 	var spots: Array[Transform3D] = []
 	var tints: Array[Color] = []
-	var target := 150000
+	var target := 45000 if preload("res://scripts/platform.gd").is_touch() else 150000
 	var tries := 0
 	while spots.size() < target and tries < target * 3:
 		tries += 1

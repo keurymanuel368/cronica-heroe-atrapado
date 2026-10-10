@@ -30,6 +30,7 @@ var _interiors: Node3D
 var _big_map: Control
 var _story: Node
 var _net: Node
+var _touch: bool = preload("res://scripts/platform.gd").is_touch()
 ## Sala en la que está el héroe ({} si está fuera).
 var _inside: Dictionary = {}
 var _boss_defeated := false
@@ -142,6 +143,14 @@ func _ready() -> void:
 		_system_panel.visible = false
 		_hud.show_system("Partida cargada. Bienvenido de vuelta, Héroe.", 4.0)
 	add_child(preload("res://scripts/debug_capture.gd").new())
+	if _touch:
+		_help_panel.visible = false
+		var touch := preload("res://scripts/touch.gd").new()
+		touch.player = _player
+		add_child(touch)
+		# Calidad más ligera para celular y tablet.
+		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+		RenderingServer.directional_shadow_atlas_set_size(2048, true)
 
 
 # --- Controles -------------------------------------------------------------
@@ -198,6 +207,8 @@ func _bind(action: String, keys: Array, buttons: Array, axis: Array = [], mouse:
 		m.axis_value = axis[1]
 		InputMap.action_add_event(action, m)
 	for mb in mouse:
+		if _touch:
+			break
 		var e := InputEventMouseButton.new()
 		e.button_index = mb
 		InputMap.action_add_event(action, e)
