@@ -117,7 +117,14 @@ func is_complete() -> bool:
 
 
 ## Líneas especiales de historia si este personaje es el objetivo actual.
+func _client() -> bool:
+	var net := get_tree().get_first_node_in_group("net")
+	return net != null and net.is_client()
+
+
 func lines_for(npc_name: String) -> Array:
+	if _client():
+		return []
 	var s := step()
 	if s.kind == "talk" and s.npc == npc_name:
 		return s.lines
@@ -193,6 +200,9 @@ func _enter_step(announce: bool) -> void:
 func _process(_delta: float) -> void:
 	if player == null:
 		return
+	if _client():
+		_beacon.visible = false
+		return
 	var s := step()
 	match s.kind:
 		"guild":
@@ -244,6 +254,8 @@ func objective_position():
 
 
 func tracker_text() -> String:
+	if _client():
+		return "GRUPO · La historia avanza en la partida del anfitrión.\nAyúdale en sus misiones (P: ventana del grupo)."
 	var s := step()
 	var text: String = s.goal
 	if s.has("count") and s.kind != "level":
@@ -325,6 +337,8 @@ func portal_prompt() -> String:
 		if player.global_position.distance_to(FINAL_ARENA + Vector3(0, 0, 18)) < 3.5:
 			return "Volver al Cristal del despertar"
 		return ""
+	if _client() and player.global_position.distance_to(world.awakening_point()) < 5.0:
+		return "Entrar al Trono del Vacío (con el grupo)"
 	if s.kind in ["crystal", "final"] and player.global_position.distance_to(world.awakening_point()) < 5.0:
 		return "Tocar el cristal" if s.kind == "crystal" else "Entrar al Trono del Vacío"
 	return ""
@@ -334,6 +348,9 @@ func use_portal() -> void:
 	var s := step()
 	if in_final:
 		_leave_final()
+		return
+	if _client():
+		_enter_final()
 		return
 	if s.kind == "crystal":
 		hud.show_system("Los dos fragmentos se funden con el cristal.\nUna puerta morada se abre hacia el Trono del Vacío...", 5.0)
@@ -451,6 +468,8 @@ func _enter_final() -> void:
 	player.velocity = Vector3.ZERO
 	player.face_yaw(0.0)
 	hud.show_zone("Trono del Vacío")
+	if _client():
+		return
 	if final_boss == null or not is_instance_valid(final_boss):
 		final_boss = CharacterBody3D.new()
 		final_boss.set_script(ENEMY)
@@ -486,6 +505,12 @@ func _ending() -> void:
 		"Escucha: el Sistema no es tu enemigo. Solo busca a alguien digno de proteger este mundo.",
 		"La puerta a tu mundo está abierta. Tú decides si cruzarla... o quedarte en Aurelia.",
 		"Adiós, amigo. Cuida de ellos por mí."], func(): hud.show_ending())
+
+
+## En un invitado: el anfitrión venció a Kaito y todos ven el final.
+func client_ending() -> void:
+	player.story = STEPS.size() - 2
+	_ending()
 
 
 func is_final_area() -> bool:

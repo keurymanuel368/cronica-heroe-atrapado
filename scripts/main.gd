@@ -29,6 +29,7 @@ var _in_dungeon := false
 var _interiors: Node3D
 var _big_map: Control
 var _story: Node
+var _net: Node
 ## Sala en la que está el héroe ({} si está fuera).
 var _inside: Dictionary = {}
 var _boss_defeated := false
@@ -42,6 +43,10 @@ const NPC_SCRIPT := preload("res://scripts/npc.gd")
 func _ready() -> void:
 	_rng.seed = 20261009
 	_setup_input()
+	_net = preload("res://scripts/net.gd").new()
+	_net.name = "Net"
+	add_child(_net)
+	_net.add_to_group("net")
 	_build_environment()
 	_world = WORLD_SCRIPT.new()
 	add_child(_world)
@@ -114,8 +119,16 @@ func _ready() -> void:
 	_story = preload("res://scripts/story.gd").new()
 	add_child(_story)
 	_story.setup(self, _player, _hud, _world, _interiors)
+	_net.setup(self, _player)
 	if "--ending" in OS.get_cmdline_user_args():
 		_hud.show_ending.call_deferred()
+	for arg in OS.get_cmdline_user_args():
+		if arg == "--host":
+			_net.host.call_deferred()
+		elif arg.begins_with("--join="):
+			_net.join.call_deferred(arg.trim_prefix("--join="))
+		elif arg == "--party":
+			_net.toggle_panel.call_deferred()
 	if "--final" in OS.get_cmdline_user_args():
 		_story._enter_final.call_deferred()
 	_spawn_pickups()
@@ -147,6 +160,7 @@ func _setup_input() -> void:
 	_bind("cheer", [KEY_G], [])
 	_bind("toggle_help", [KEY_H], [JOY_BUTTON_BACK])
 	_bind("map", [KEY_M], [])
+	_bind("party", [KEY_P], [])
 	_bind("fullscreen", [KEY_F11], [])
 	_bind("attack_light", [KEY_J], [JOY_BUTTON_X], [], [MOUSE_BUTTON_LEFT])
 	_bind("attack_heavy", [KEY_E, KEY_K], [JOY_BUTTON_Y])
@@ -193,6 +207,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("fullscreen"):
 		var full := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
+	elif event.is_action_pressed("party"):
+		_net.toggle_panel()
 	elif event.is_action_pressed("map"):
 		_big_map.visible = not _big_map.visible
 	elif event.is_action_pressed("toggle_help"):
@@ -713,7 +729,7 @@ func _build_hud() -> void:
 		"Tab   Fijar objetivo   ·   C   Ventana de estado",
 		"1   Poder especial   ·   2   Despertar",
 		"3   Cambiar de arma   ·   G   Celebrar",
-		"M   Mapa   ·   F   Caballo / casas",
+		"M   Mapa   ·   P   Jugar con amigos",
 		"F   Hablar / Entrar   ·   F5   Guardar partida",
 		"R   Lanzar magia   ·   T   Cambiar elemento",
 		"Z   Poción   ·   X   Éter   ·   I   Inventario",

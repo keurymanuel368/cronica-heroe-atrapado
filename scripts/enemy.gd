@@ -84,6 +84,11 @@ var kind := "minion"
 var tint := Color.WHITE
 var title := ""
 var _special_timer := 6.0
+## Número para el cooperativo (igual en todos los ordenadores).
+var net_id := -1
+var _net: Node
+var _net_pos := Vector3.ZERO
+var _net_rot := 0.0
 var _summoned := 0
 ## Si es true no reaparece al morir (emboscadas).
 var once := false
@@ -150,6 +155,10 @@ func _ready() -> void:
 
 	_build_bar()
 	_timer = randf_range(1.0, 3.0)
+	_net = get_tree().get_first_node_in_group("net")
+	if _net:
+		_net.register_enemy(self)
+	_net_pos = global_position
 
 
 func _attach(skeleton: Skeleton3D, bone: String, path: String) -> void:
@@ -215,11 +224,58 @@ func is_alive() -> bool:
 	return _state != State.DEAD
 
 
+## El héroe más cercano (en grupo también los amigos) al que perseguir.
 func _player() -> Node3D:
-	return get_tree().get_first_node_in_group("player")
+	var best: Node3D = get_tree().get_first_node_in_group("player")
+	if _net == null or not _net.active():
+		return best
+	var best_d := INF if best == null or not best.is_alive() else best.global_position.distance_to(global_position)
+	for p in get_tree().get_nodes_in_group("remote_players"):
+		if p.is_alive():
+			var d: float = p.global_position.distance_to(global_position)
+			if d < best_d:
+				best_d = d
+				best = p
+	return best
+
+
+## En un invitado, el enemigo solo copia lo que manda el anfitrión.
+func apply_net_state(pos: Vector3, rot: float, anim: String, new_hp: int, state: int) -> void:
+	_net_pos = pos
+	_net_rot = rot
+	if new_hp != hp:
+		hp = new_hp
+		_update_bar()
+		_set_bar_visible(hp < max_hp and state != State.DEAD)
+	if anim != "" and _anim.has_animation(anim) and _anim.current_animation != anim and state != State.DEAD:
+		_anim.play(anim, 0.15)
+	if state == State.DEAD and _state != State.DEAD:
+		_state = State.DEAD
+		_anim.play("Death_A", 0.05)
+		_set_bar_visible(false)
+		_shape.disabled = true
+	elif state != State.DEAD and _state == State.DEAD:
+		_state = state as State
+		_shape.disabled = false
+		_model.position.y = _base_y
+		_model.visible = true
+		global_position = pos
+	elif state != State.DEAD:
+		_state = state as State
+
+
+func _net_puppet(delta: float) -> void:
+	if global_position.distance_to(_net_pos) > 8.0:
+		global_position = _net_pos
+	else:
+		global_position = global_position.lerp(_net_pos, 1.0 - exp(-10.0 * delta))
+	_model.rotation.y = lerp_angle(_model.rotation.y, _net_rot, 1.0 - exp(-12.0 * delta))
 
 
 func _physics_process(delta: float) -> void:
+	if _net and _net.is_client():
+		_net_puppet(delta)
+		return
 	var player := _player()
 	var target_velocity := Vector3.ZERO
 	_cooldown = max(_cooldown - delta, 0.0)
@@ -341,6 +397,8 @@ func _cast_orb(player: Node3D) -> void:
 	p.radius = 0.6
 	p.life = 2.5
 	p.source = self
+	if _net:
+		_net.enemy_orb(start, p.velocity, int(data.atk))
 
 
 ## Kaito: anillos de orbes cada pocos segundos y esqueletos de apoyo al
@@ -397,6 +455,8 @@ func _orb(start: Vector3, vel: Vector3, damage: int) -> void:
 	p.radius = 0.6
 	p.life = 3.0
 	p.source = self
+	if _net:
+		_net.enemy_orb(start, vel, damage)
 
 
 func _face(dir: Vector3, delta: float) -> void:
@@ -420,6 +480,13 @@ func _play(anim_name: String) -> void:
 ## Recibe un golpe del héroe. Devuelve true si lo mató.
 func take_hit(damage: int, from: Vector3, stagger: bool, push: float) -> bool:
 	if _state == State.DEAD:
+		return false
+	if _net and _net.is_client():
+		# El anfitrión aplica el daño; aquí solo se ve el golpe.
+		_net.send_enemy_hit(self, damage, from, stagger, push)
+		Fx.number(get_parent(), global_position + Vector3(0, data.height + 0.2, 0), str(maxi(1, damage - int(data.def))), Color(1.0, 0.95, 0.6))
+		_model.scale = Vector3(1.15, 0.85, 1.15) * _base_scale
+		_model.create_tween().tween_property(_model, "scale", _base_scale, 0.15)
 		return false
 	var amount := maxi(1, int(damage * randf_range(0.9, 1.1)) - int(data.def))
 	hp -= amount
@@ -459,7 +526,9 @@ func _die() -> void:
 	_set_bar_visible(false)
 	_shape.disabled = true
 	velocity = Vector3.ZERO
-	var player := _player()
+	var player: Node3D = get_tree().get_first_node_in_group("player")
+	if _net:
+		_net.enemy_died(self, data.exp, int(data.exp * 0.6) + 3)
 	if player:
 		player.gain_exp(data.exp, global_position + Vector3(0, data.height, 0))
 		player.on_enemy_killed(kind)
@@ -471,6 +540,8 @@ func _die() -> void:
 	get_tree().call_group("story_listeners", "on_story_kill", self)
 	if is_boss():
 		get_tree().call_group("boss_listeners", "on_boss_defeated", self)
+		if kind == "final" and _net:
+			_net.final_defeated()
 	var tween := create_tween()
 	tween.tween_interval(2.5)
 	tween.tween_property(_model, "position:y", _base_y - 2.2, 1.5)

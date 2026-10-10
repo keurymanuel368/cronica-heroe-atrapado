@@ -145,6 +145,10 @@ func _draw_mini() -> void:
 			var p := _to_map(e.global_position, c)
 			if p.distance_to(mid) < radius - 3.0:
 				draw_circle(p, 3.0 if not e.is_boss() else 6.0, Color(0.95, 0.25, 0.25))
+	for rp in get_tree().get_nodes_in_group("remote_players"):
+		var p := _to_map(rp.global_position, c)
+		if p.distance_to(mid) < radius - 3.0:
+			draw_circle(p, 4.5, Color(0.3, 1.0, 0.6))
 	_arrow(mid, player.facing_yaw(), 1.0)
 	_frame(mid, radius)
 
@@ -186,12 +190,17 @@ func _draw_full() -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e.is_alive() and e.global_position.y > -50.0 and e.global_position.x < 300.0:
 			draw_circle(to_screen.call(e.global_position), 3.5 if not e.is_boss() else 7.0, Color(0.95, 0.25, 0.25))
+	for rp in get_tree().get_nodes_in_group("remote_players"):
+		if rp.global_position.y > -50.0 and rp.global_position.x < 300.0:
+			var p: Vector2 = to_screen.call(rp.global_position)
+			draw_circle(p, 6.0, Color(0.3, 1.0, 0.6))
+			_label(rp.player_name, p + Vector2(0, -14), Color(0.6, 1.0, 0.75), 13)
 	if main and main.indoor_name() == "" and not main.in_dungeon():
 		_arrow(to_screen.call(player.global_position), player.facing_yaw(), 1.6)
 	# Título y leyenda.
 	_label("MAPA DEL REINO DE AURELIA", Vector2(screen.x * 0.5, origin.y - 40.0), Color(1.0, 0.88, 0.55), 26)
 	var legend := [[Color(0.45, 0.9, 1.0), "Tú"], [Color(1.0, 0.85, 0.3), "Gente"], [Color(0.95, 0.25, 0.25), "Enemigos"],
-		[Color(0.55, 0.35, 0.2), "Caballos"], [Color(0.4, 0.5, 0.85), "Edificios"]]
+		[Color(0.55, 0.35, 0.2), "Caballos"], [Color(0.4, 0.5, 0.85), "Edificios"], [Color(0.3, 1.0, 0.6), "Amigos"]]
 	var lx := origin.x + side + 40.0
 	if lx + 140.0 > screen.x:
 		lx = origin.x + 10.0
