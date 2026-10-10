@@ -34,6 +34,10 @@ var _exp_bar: ProgressBar
 var _hp_text: Label
 var _mp_text: Label
 var _weapon_label: Label
+var _special_label: Label
+var _special_bar: ProgressBar
+var _power_label: Label
+var _power_bar: ProgressBar
 var _toast: PanelContainer
 var _toast_label: Label
 var _toast_time := 0.0
@@ -60,6 +64,8 @@ func setup(p: Node, loaded := false) -> void:
 	_refresh()
 	var skip := loaded
 	for arg in OS.get_cmdline_user_args():
+		if arg == "--full-power":
+			player.power = 100.0
 		if arg.begins_with("--weapon="):
 			player.set_weapon(arg.trim_prefix("--weapon="))
 			skip = true
@@ -162,6 +168,14 @@ func _build_weapon_box() -> void:
 	v.add_child(_label("ARMA", 13, RUNE))
 	_weapon_label = _label("", 16, GOLD)
 	v.add_child(_weapon_label)
+	_special_label = _label("", 15, Color(1.0, 0.95, 0.85))
+	v.add_child(_special_label)
+	_special_bar = _bar(Color(0.45, 0.8, 1.0), 420, 7)
+	v.add_child(_special_bar)
+	_power_label = _label("", 15, Color(1.0, 0.85, 0.4))
+	v.add_child(_power_label)
+	_power_bar = _bar(Color(1.0, 0.75, 0.25), 420, 9)
+	v.add_child(_power_bar)
 	panel.add_child(v)
 	add_child(panel)
 
@@ -339,7 +353,7 @@ func _build_zone_and_clock() -> void:
 	_clock_label.anchor_right = 1.0
 	_clock_label.offset_left = -260
 	_clock_label.offset_right = -24
-	_clock_label.offset_top = 24
+	_clock_label.offset_top = 250
 	_clock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	add_child(_clock_label)
 	_gold_label = _label("", 18, GOLD)
@@ -347,7 +361,7 @@ func _build_zone_and_clock() -> void:
 	_gold_label.anchor_right = 1.0
 	_gold_label.offset_left = -360
 	_gold_label.offset_right = -24
-	_gold_label.offset_top = 48
+	_gold_label.offset_top = 274
 	_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	add_child(_gold_label)
 	_tracker = _label("", 16)
@@ -355,7 +369,7 @@ func _build_zone_and_clock() -> void:
 	_tracker.anchor_right = 1.0
 	_tracker.offset_left = -420
 	_tracker.offset_right = -24
-	_tracker.offset_top = 80
+	_tracker.offset_top = 304
 	_tracker.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	add_child(_tracker)
 
@@ -456,6 +470,24 @@ func _unhandled_input(event: InputEvent) -> void:
 		_refresh()
 
 
+func _update_powers() -> void:
+	if player == null or _special_bar == null:
+		return
+	var sp: Dictionary = Weapons.SPECIALS[player.weapon]
+	var cd: float = player.special_cd
+	_special_label.text = "[1] %s%s" % [sp.name, ("   %.0f s" % ceilf(cd)) if cd > 0.0 else "   ¡Listo!"]
+	_special_bar.max_value = float(sp.cd)
+	_special_bar.value = float(sp.cd) - cd
+	var pw: float = player.power
+	if player.awakened > 0.0:
+		_power_label.text = "[2] ¡DESPERTAR ACTIVO!  %.0f s" % ceilf(player.awakened)
+	elif pw >= 100.0:
+		_power_label.text = "[2] Despertar del Héroe   ¡LISTO!"
+	else:
+		_power_label.text = "[2] Despertar del Héroe   %d%%" % int(pw)
+	_power_bar.value = pw
+
+
 func _refresh() -> void:
 	if player == null:
 		return
@@ -469,7 +501,7 @@ func _refresh() -> void:
 	_exp_bar.max_value = player.exp_to_next()
 	_exp_bar.value = player.exp_points
 	var w: Dictionary = Weapons.DATA[player.weapon]
-	_weapon_label.text = "%s +%d   (1-4)\nMagia: %s · %s  (R lanzar · T cambiar)\nPociones %d (Z)  ·  Éter %d (X)" % [w.name, player.forge,
+	_weapon_label.text = "%s +%d   (3 cambiar)\nMagia: %s · %s  (R lanzar · T cambiar)\nPociones %d (Z)  ·  Éter %d (X)" % [w.name, player.forge,
 		Rpg.MAGIC[player.element].name, Rpg.MAGIC[player.element].spell, player.item_count("pocion"), player.item_count("eter")]
 	_gold_label.text = "%d de oro%s" % [player.gold, ("   ·   %d punto(s) de habilidad (V)" % player.skill_points) if player.skill_points > 0 else ""]
 	var lines: Array = []
@@ -498,6 +530,7 @@ func _refresh() -> void:
 
 
 func _process(delta: float) -> void:
+	_update_powers()
 	if _toast_time > 0.0:
 		_toast_time -= delta
 		if _toast_time < 1.0:

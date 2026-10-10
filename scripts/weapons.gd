@@ -59,3 +59,12 @@ const DATA := {
 		"idle": "Idle",
 	},
 }
+
+
+## Poder especial de cada arma (tecla 1): nombre, descripción y recarga.
+const SPECIALS := {
+	"espada": {"name": "Cien Espadas", "desc": "Torbellino de cortes alrededor del héroe", "cd": 8.0},
+	"escudo": {"name": "Muro Divino", "desc": "Onda que derriba y escudo invencible 3 s", "cd": 10.0},
+	"lanza": {"name": "Lanza Relámpago", "desc": "Embestida veloz que atraviesa enemigos", "cd": 7.0},
+	"arco": {"name": "Lluvia de Flechas", "desc": "Cae una lluvia de flechas sobre la zona", "cd": 9.0},
+}

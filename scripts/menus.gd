@@ -16,6 +16,8 @@ var _title: Label
 var _info: Label
 var _list: VBoxContainer
 var _current := ""
+var _system_style: StyleBoxFlat
+var _wood_style: StyleBoxFlat
 
 
 func _ready() -> void:
@@ -34,12 +36,24 @@ func _ready() -> void:
 	sb.shadow_color = Color(0.44, 0.83, 1.0, 0.3)
 	sb.shadow_size = 10
 	_panel.add_theme_stylebox_override("panel", sb)
+	_system_style = sb
+	_wood_style = StyleBoxFlat.new()
+	_wood_style.bg_color = Color(0.45, 0.29, 0.16)
+	_wood_style.border_color = Color(0.26, 0.15, 0.07)
+	_wood_style.set_border_width_all(12)
+	_wood_style.set_corner_radius_all(4)
+	_wood_style.content_margin_left = 26
+	_wood_style.content_margin_right = 26
+	_wood_style.content_margin_top = 18
+	_wood_style.content_margin_bottom = 18
+	_wood_style.shadow_color = Color(0, 0, 0, 0.5)
+	_wood_style.shadow_size = 14
 	_panel.anchor_left = 0.5
 	_panel.anchor_right = 0.5
 	_panel.anchor_top = 0.5
 	_panel.anchor_bottom = 0.5
-	_panel.offset_left = -420
-	_panel.offset_right = 420
+	_panel.offset_left = -440
+	_panel.offset_right = 440
 	_panel.offset_top = -330
 	_panel.offset_bottom = 330
 	var v := VBoxContainer.new()
@@ -132,6 +146,8 @@ func _section(text: String) -> void:
 
 func open(kind: String) -> void:
 	_current = kind
+	_panel.add_theme_stylebox_override("panel", _wood_style if kind == "board" else _system_style)
+	_title.add_theme_color_override("font_color", Color(1.0, 0.9, 0.65) if kind == "board" else RUNE)
 	refresh()
 	_panel.visible = true
 	get_tree().paused = true
@@ -175,32 +191,104 @@ func _unhandled_input(event: InputEvent) -> void:
 func _board() -> void:
 	var rank := Rpg.rank_for(player.guild_points)
 	var next := Rpg.next_rank_points(player.guild_points)
-	_title.text = "【 TABLÓN DEL GREMIO 】"
-	_info.text = "Rango %s  ·  %d puntos de gremio%s  ·  %d de oro" % [rank, player.guild_points,
+	_title.text = "TABLÓN DEL GREMIO DE RIVEL"
+	_info.text = "Rango %s  ·  %d puntos de gremio%s  ·  %d de oro  ·  Máximo 3 encargos a la vez" % [rank, player.guild_points,
 		("  (siguiente rango: %d)" % next) if next > 0 else "", player.gold]
 	var rank_i := Rpg.rank_index(rank)
-	if not player.quests.is_empty():
-		_section("Misiones aceptadas")
-		for id in player.quests:
-			var q := Rpg.quest(id)
-			var ready: bool = player.quest_ready(id)
-			_row("[%s] %s   %d/%d" % [q.rank, q.name, player.quest_progress(id), q.count], q.desc,
-				"Entregar" if ready else "En curso", ready, _turn_in.bind(id), GOLD if ready else TEXT)
-	_section("Misiones disponibles")
-	var any := false
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 18)
+	_list.add_child(grid)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	# Primero los encargos aceptados, luego los disponibles.
+	for id in player.quests:
+		var q := Rpg.quest(id)
+		var ready: bool = player.quest_ready(id)
+		grid.add_child(_paper(q, "ACEPTADA  %d/%d" % [player.quest_progress(id), q.count],
+			"Entregar" if ready else "En curso", ready, _turn_in.bind(id), rng.randf_range(-2.5, 2.5), Color(1.0, 0.95, 0.75)))
 	for q in Rpg.QUESTS:
 		if q.id in player.quests_done or player.quests.has(q.id):
 			continue
-		any = true
-		var allowed := Rpg.rank_index(q.rank) <= rank_i
-		var reward := "Recompensa: %d oro · %d EXP · %d puntos" % [q.gold, q.exp, q.gp]
+		var allowed: bool = Rpg.rank_index(q.rank) <= rank_i
 		var can: bool = allowed and player.quests.size() < 3
-		_row("[%s] %s" % [q.rank, q.name], "%s\n%s" % [q.desc, reward],
-			"Aceptar" if allowed else "Rango %s" % q.rank, can, _accept.bind(q.id), TEXT if allowed else DIM)
-	if not any:
-		_row("¡Completaste todas las misiones del tablón!", "Pronto llegarán encargos de otras ciudades.")
-	if player.quests_done.size() > 0:
-		_section("Completadas: %d de %d" % [player.quests_done.size(), Rpg.QUESTS.size()])
+		grid.add_child(_paper(q, "Recompensa: %d oro · %d EXP" % [q.gold, q.exp],
+			"Aceptar" if allowed else "Requiere rango %s" % q.rank, can, _accept.bind(q.id), rng.randf_range(-3.0, 3.0),
+			Color(0.96, 0.9, 0.74) if allowed else Color(0.78, 0.74, 0.66)))
+	var done := _label("Encargos completados: %d de %d" % [player.quests_done.size(), Rpg.QUESTS.size()], 15, Color(1.0, 0.9, 0.65))
+	_list.add_child(done)
+
+
+## Un papel clavado en el tablón: rango, título, texto y botón.
+func _paper(q: Dictionary, status: String, button_text: String, enabled: bool, on_press: Callable, tilt: float, paper_color: Color) -> Control:
+	var holder := Control.new()
+	holder.custom_minimum_size = Vector2(250, 210)
+	var paper := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = paper_color
+	sb.border_color = Color(0.7, 0.6, 0.42)
+	sb.set_border_width_all(1)
+	sb.content_margin_left = 12
+	sb.content_margin_right = 12
+	sb.content_margin_top = 16
+	sb.content_margin_bottom = 10
+	sb.shadow_color = Color(0, 0, 0, 0.35)
+	sb.shadow_size = 5
+	sb.shadow_offset = Vector2(3, 4)
+	paper.add_theme_stylebox_override("panel", sb)
+	paper.size = Vector2(240, 200)
+	paper.position = Vector2(5, 5)
+	paper.pivot_offset = Vector2(120, 100)
+	paper.rotation_degrees = tilt
+	var ink := Color(0.22, 0.14, 0.08)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 4)
+	var head := HBoxContainer.new()
+	var title := Label.new()
+	title.text = q.name
+	title.add_theme_font_size_override("font_size", 17)
+	title.add_theme_color_override("font_color", ink)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	head.add_child(title)
+	var stamp := Label.new()
+	stamp.text = q.rank
+	stamp.add_theme_font_size_override("font_size", 22)
+	stamp.add_theme_color_override("font_color", Color(0.72, 0.12, 0.1))
+	head.add_child(stamp)
+	v.add_child(head)
+	var desc := Label.new()
+	desc.text = q.desc
+	desc.add_theme_font_size_override("font_size", 13)
+	desc.add_theme_color_override("font_color", Color(0.32, 0.22, 0.14))
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.custom_minimum_size = Vector2(214, 0)
+	desc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(desc)
+	var st := Label.new()
+	st.text = status
+	st.add_theme_font_size_override("font_size", 12)
+	st.add_theme_color_override("font_color", Color(0.45, 0.3, 0.12))
+	v.add_child(st)
+	var b := _button(button_text, enabled)
+	v.add_child(b)
+	if on_press.is_valid():
+		b.pressed.connect(on_press)
+	paper.add_child(v)
+	holder.add_child(paper)
+	# Chincheta roja arriba del papel.
+	var pin := Panel.new()
+	var pin_sb := StyleBoxFlat.new()
+	pin_sb.bg_color = Color(0.85, 0.15, 0.12)
+	pin_sb.set_corner_radius_all(8)
+	pin_sb.shadow_color = Color(0, 0, 0, 0.4)
+	pin_sb.shadow_size = 2
+	pin.add_theme_stylebox_override("panel", pin_sb)
+	pin.size = Vector2(14, 14)
+	pin.position = Vector2(118, 0)
+	holder.add_child(pin)
+	return holder
 
 
 func _accept(id: String) -> void:

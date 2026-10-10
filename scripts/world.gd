@@ -109,6 +109,32 @@ func build() -> void:
 	_build_gate()
 	_build_signs()
 	_build_clouds()
+	_build_village_life()
+
+
+var _lamps: Array = []
+var _fireflies: Array = []
+var _night := false
+var _check := 0.0
+
+
+func _process(delta: float) -> void:
+	_check -= delta
+	if _check > 0.0:
+		return
+	_check = 1.0
+	var clock := get_tree().get_first_node_in_group("world_clock")
+	if clock == null:
+		return
+	var night: bool = clock.is_night() or clock.time > 18.5 or clock.time < 6.5
+	if night == _night:
+		return
+	_night = night
+	for l in _lamps:
+		l.light.visible = night
+		l.mat.emission_energy_multiplier = 4.0 if night else 0.3
+	for f in _fireflies:
+		f.emitting = night
 
 
 # --- Forma del terreno ----------------------------------------------------
@@ -477,10 +503,71 @@ func _build_village() -> void:
 		var p: Vector2 = WINDMILL + f
 		_place(BUILD + "building_grain.gltf", surface(p.x, p.y) - Vector3(0, 0.3, 0), 7.0, 0.0)
 
-	# Puente sobre el río, en el cruce del camino.
-	var bridge := _place(BUILD + "building_bridge_A.gltf", Vector3(BRIDGE.x, WATER_LEVEL + 0.2, BRIDGE.y), 9.0, 0.02)
-	bridge.rotation.y = PI / 2.0
-	_add_box(Vector3(BRIDGE.x, WATER_LEVEL + 1.0, BRIDGE.y), Vector3(5, 0.6, 22))
+	# Puente de madera sobre el río, en el cruce del camino.
+	_build_bridge()
+
+
+## Puente: tablones en arco de orilla a orilla, con barandillas. Cada tramo
+## sigue la altura del terreno en las puntas, así se sube caminando.
+func _build_bridge() -> void:
+	var half := 13.0
+	var width := 4.6
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.55, 0.36, 0.2)
+	wood.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.38, 0.24, 0.13)
+	dark.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	var points: Array[Vector3] = []
+	var steps := 26
+	for i in steps + 1:
+		var z := BRIDGE.y - half + 2.0 * half * i / steps
+		var d := absf(z - BRIDGE.y) / half
+		var arch := WATER_LEVEL + 1.4 + 0.9 * (1.0 - d * d)
+		var y := maxf(arch, height(BRIDGE.x, z) + 0.05)
+		points.append(Vector3(BRIDGE.x, y, z))
+	for i in steps:
+		var a := points[i]
+		var b := points[i + 1]
+		var mid := (a + b) * 0.5
+		var length := a.distance_to(b)
+		var tilt := atan2(b.y - a.y, b.z - a.z)
+		var plank := MeshInstance3D.new()
+		var pm := BoxMesh.new()
+		pm.size = Vector3(width, 0.25, length + 0.05)
+		pm.material = wood if i % 2 == 0 else dark
+		plank.mesh = pm
+		plank.position = mid
+		plank.rotation.x = -tilt
+		add_child(plank)
+		var body := StaticBody3D.new()
+		body.position = mid - Vector3(0, 0.1, 0)
+		body.rotation.x = -tilt
+		var col := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(width, 0.4, length + 0.1)
+		col.shape = box
+		body.add_child(col)
+		add_child(body)
+		# Barandillas a los dos lados.
+		for side in [-1.0, 1.0]:
+			if i % 2 == 0:
+				var post := MeshInstance3D.new()
+				var postm := BoxMesh.new()
+				postm.size = Vector3(0.18, 1.1, 0.18)
+				postm.material = dark
+				post.mesh = postm
+				post.position = a + Vector3(side * (width * 0.5 - 0.1), 0.6, 0)
+				add_child(post)
+			var rail := MeshInstance3D.new()
+			var railm := BoxMesh.new()
+			railm.size = Vector3(0.12, 0.12, length + 0.05)
+			railm.material = wood
+			rail.mesh = railm
+			rail.position = mid + Vector3(side * (width * 0.5 - 0.1), 1.1, 0)
+			rail.rotation.x = -tilt
+			add_child(rail)
+			_add_box(mid + Vector3(side * (width * 0.5 - 0.1), 0.8, 0), Vector3(0.2, 1.2, length))
 
 
 ## Arena: suelo de tierra, círculo de postes de piedra y estandartes.
@@ -718,3 +805,220 @@ func _add_cylinder(center: Vector3, radius: float, h: float) -> void:
 	col.shape = cyl
 	body.add_child(col)
 	add_child(body)
+
+
+# --- Vida del pueblo: farolas, vallas, cajas, tablón y luciérnagas -------
+
+func _build_village_life() -> void:
+	var v := Vector3(VILLAGE.x, 0, VILLAGE.y)
+	# Farolas a lo largo del camino y la plaza; se encienden de noche.
+	var lamp_spots := [Vector2(-3, 8), Vector2(5, -2), Vector2(-4, -12), Vector2(5, -20), Vector2(-3, 20),
+		Vector2(3, 32), Vector2(-2, 46), Vector2(6, -32)]
+	for p in lamp_spots:
+		_add_lamp(VILLAGE + p)
+	for p in [Vector2(-2, -64), Vector2(2, -46), Vector2(-6, -24), Vector2(6, -8)]:
+		_add_lamp(p)
+	# Vallas de madera en las afueras del pueblo.
+	for side in [-1.0, 1.0]:
+		for i in 7:
+			var p := VILLAGE + Vector2(side * 26.0, -21.0 + i * 6.0)
+			var f := _place(BUILD + "fence_wood_straight.gltf", surface(p.x, p.y), 3.2, 0.02)
+			f.rotation.y = PI / 2.0
+	for i in 5:
+		for side in [-1.0, 1.0]:
+			var p := VILLAGE + Vector2(side * (8.0 + i * 3.6), 26.0)
+			_place(BUILD + "fence_wood_straight.gltf", surface(p.x, p.y), 3.2, 0.02)
+	# Mercadillo: cajas, sacos y barriles junto al mercader y la herrería.
+	var props := [["barrel", Vector2(-9, -19)], ["barrel", Vector2(-10, -20)], ["crate_A_big", Vector2(-6, -19)],
+		["sack", Vector2(-5, -17)], ["crate_A_big", Vector2(11, -15)], ["barrel", Vector2(11, -9)],
+		["sack", Vector2(-9, 1)], ["barrel", Vector2(-8, 5)], ["crate_A_big", Vector2(16, 8)], ["sack", Vector2(17, 9)],
+		["flag_blue", Vector2(17, 1)], ["flag_blue", Vector2(-17, -8)]]
+	for prop in props:
+		var p: Vector2 = VILLAGE + prop[1]
+		_place(BUILD + prop[0] + ".gltf", surface(p.x, p.y), 4.0 if prop[0] != "flag_blue" else 5.0, 0.02).rotation.y = _rng.randf() * TAU
+	# Flores de colores en la pradera del pueblo.
+	_build_flowers()
+	# Tablón del gremio junto a Mira.
+	_build_board(VILLAGE + Vector2(10.5, 9.5))
+	# Luciérnagas de noche en el bosque, en el río y en el pueblo.
+	for p in [FOREST, FOREST + Vector2(25, 20), FOREST + Vector2(-20, -25), Vector2(10, -64), VILLAGE + Vector2(0, 20)]:
+		_add_fireflies(surface(p.x, p.y))
+
+
+func _add_lamp(p: Vector2) -> void:
+	var base := surface(p.x, p.y)
+	if base.y < WATER_LEVEL:
+		return
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.25, 0.18, 0.12)
+	var post := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.08
+	cyl.bottom_radius = 0.12
+	cyl.height = 3.2
+	cyl.material = wood
+	post.mesh = cyl
+	post.position = base + Vector3(0, 1.6, 0)
+	add_child(post)
+	var arm := MeshInstance3D.new()
+	var arm_mesh := BoxMesh.new()
+	arm_mesh.size = Vector3(0.7, 0.08, 0.08)
+	arm_mesh.material = wood
+	arm.mesh = arm_mesh
+	arm.position = base + Vector3(0.3, 3.1, 0)
+	add_child(arm)
+	var glass := MeshInstance3D.new()
+	var lantern := BoxMesh.new()
+	lantern.size = Vector3(0.32, 0.42, 0.32)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(1.0, 0.8, 0.45)
+	mat.emission_enabled = true
+	mat.emission = Color(1.0, 0.72, 0.35)
+	mat.emission_energy_multiplier = 0.3
+	lantern.material = mat
+	glass.mesh = lantern
+	glass.position = base + Vector3(0.6, 2.82, 0)
+	add_child(glass)
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.75, 0.45)
+	light.light_energy = 2.2
+	light.omni_range = 9.0
+	light.position = glass.position
+	light.visible = false
+	add_child(light)
+	_add_cylinder(base + Vector3(0, 1.6, 0), 0.15, 3.2)
+	_lamps.append({"light": light, "mat": mat})
+
+
+func _build_flowers() -> void:
+	var colors := [Color(0.95, 0.35, 0.45), Color(1.0, 0.85, 0.3), Color(0.7, 0.5, 1.0), Color(1.0, 1.0, 1.0)]
+	for c in colors:
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		var quad := SphereMesh.new()
+		quad.radius = 0.12
+		quad.height = 0.18
+		quad.radial_segments = 6
+		quad.rings = 3
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = c
+		mat.emission_enabled = true
+		mat.emission = c
+		mat.emission_energy_multiplier = 0.15
+		quad.material = mat
+		mm.mesh = quad
+		var spots: Array = []
+		var tries := 0
+		while spots.size() < 260 and tries < 3000:
+			tries += 1
+			var p := Vector2(_rng.randf_range(-90, 90), _rng.randf_range(-150, 30))
+			var h := height(p.x, p.y)
+			if h < WATER_LEVEL + 0.3 or h > 16.0 or road_distance(p.x, p.y) < 3.0 or p.distance_to(VILLAGE) < 20.0 or p.distance_to(FOREST) < FOREST_RADIUS:
+				continue
+			spots.append(Vector3(p.x, h + 0.12, p.y))
+		mm.instance_count = spots.size()
+		for i in spots.size():
+			mm.set_instance_transform(i, Transform3D(Basis(), spots[i]))
+		var inst := MultiMeshInstance3D.new()
+		inst.multimesh = mm
+		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(inst)
+
+
+## Tablón de madera con papeles clavados (el de los encargos del gremio).
+func _build_board(p: Vector2) -> void:
+	var base := surface(p.x, p.y)
+	var holder := Node3D.new()
+	holder.position = base
+	holder.rotation.y = -PI / 2.0
+	add_child(holder)
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.42, 0.27, 0.15)
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.26, 0.16, 0.08)
+	for x in [-1.3, 1.3]:
+		var leg := MeshInstance3D.new()
+		var lm := BoxMesh.new()
+		lm.size = Vector3(0.18, 2.6, 0.18)
+		lm.material = dark
+		leg.mesh = lm
+		leg.position = Vector3(x, 1.3, 0)
+		holder.add_child(leg)
+	var board := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(2.6, 1.5, 0.12)
+	bm.material = wood
+	board.mesh = bm
+	board.position = Vector3(0, 1.75, 0)
+	holder.add_child(board)
+	var roof := MeshInstance3D.new()
+	var rm := PrismMesh.new()
+	rm.size = Vector3(3.0, 0.45, 0.6)
+	rm.material = dark
+	roof.mesh = rm
+	roof.position = Vector3(0, 2.75, 0)
+	holder.add_child(roof)
+	var paper_mat := StandardMaterial3D.new()
+	paper_mat.albedo_color = Color(0.95, 0.88, 0.7)
+	var pin_mat := StandardMaterial3D.new()
+	pin_mat.albedo_color = Color(0.85, 0.15, 0.12)
+	var spots := [Vector2(-0.85, 2.05), Vector2(-0.1, 2.1), Vector2(0.75, 2.0), Vector2(-0.6, 1.4), Vector2(0.3, 1.45), Vector2(0.95, 1.4)]
+	for sp in spots:
+		var paper := MeshInstance3D.new()
+		var pm := QuadMesh.new()
+		pm.size = Vector2(0.55, 0.5)
+		pm.material = paper_mat
+		paper.mesh = pm
+		paper.position = Vector3(sp.x, sp.y, 0.07)
+		paper.rotation.z = _rng.randf_range(-0.15, 0.15)
+		holder.add_child(paper)
+		var pin := MeshInstance3D.new()
+		var pinm := SphereMesh.new()
+		pinm.radius = 0.04
+		pinm.height = 0.08
+		pinm.material = pin_mat
+		pin.mesh = pinm
+		pin.position = Vector3(sp.x, sp.y + 0.2, 0.09)
+		holder.add_child(pin)
+	var label := Label3D.new()
+	label.text = "ENCARGOS"
+	label.font_size = 48
+	label.outline_size = 10
+	label.pixel_size = 0.006
+	label.modulate = Color(1.0, 0.9, 0.6)
+	label.position = Vector3(0, 3.1, 0.1)
+	holder.add_child(label)
+	_add_box(base + Vector3(0, 1.3, 0), Vector3(0.4, 2.6, 2.8))
+
+
+func _add_fireflies(at: Vector3) -> void:
+	var f := GPUParticles3D.new()
+	f.amount = 60
+	f.lifetime = 4.0
+	f.emitting = false
+	f.visibility_aabb = AABB(Vector3(-20, -2, -20), Vector3(40, 8, 40))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(16, 1.5, 16)
+	pm.direction = Vector3.UP
+	pm.spread = 180.0
+	pm.initial_velocity_min = 0.2
+	pm.initial_velocity_max = 0.6
+	pm.gravity = Vector3.ZERO
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 2.0
+	f.process_material = pm
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.12, 0.12)
+	var qm := StandardMaterial3D.new()
+	qm.albedo_color = Color(0.85, 1.0, 0.4)
+	qm.emission_enabled = true
+	qm.emission = Color(0.8, 1.0, 0.35)
+	qm.emission_energy_multiplier = 4.0
+	qm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	qm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	quad.material = qm
+	f.draw_pass_1 = quad
+	f.position = at + Vector3(0, 1.5, 0)
+	add_child(f)
+	_fireflies.append(f)

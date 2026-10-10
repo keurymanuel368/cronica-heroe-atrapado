@@ -69,6 +69,16 @@ func _ready() -> void:
 	add_child(_hud)
 	_hud.main = self
 	_hud.setup(_player, loaded)
+	var minimap := Control.new()
+	minimap.set_script(preload("res://scripts/minimap.gd"))
+	minimap.anchor_left = 1.0
+	minimap.anchor_right = 1.0
+	minimap.offset_left = -244
+	minimap.offset_right = -24
+	minimap.offset_top = 24
+	minimap.offset_bottom = 244
+	_hud.add_child(minimap)
+	minimap.setup(_world, _player, self)
 	_menus = preload("res://scripts/menus.gd").new()
 	_menus.player = _player
 	_menus.main = self
@@ -106,7 +116,7 @@ func _setup_input() -> void:
 	_bind("attack_heavy", [KEY_E, KEY_K], [JOY_BUTTON_Y])
 	_bind("block", [KEY_L], [JOY_BUTTON_LEFT_SHOULDER], [], [MOUSE_BUTTON_RIGHT])
 	_bind("dodge", [KEY_Q, KEY_CTRL], [JOY_BUTTON_B])
-	_bind("magic", [KEY_R], [JOY_BUTTON_DPAD_UP])
+	_bind("magic", [KEY_R], [])
 	_bind("lock_on", [KEY_TAB], [JOY_BUTTON_RIGHT_STICK], [], [MOUSE_BUTTON_MIDDLE])
 	_bind("status", [KEY_C], [JOY_BUTTON_START])
 	_bind("interact", [KEY_F], [JOY_BUTTON_DPAD_DOWN])
@@ -116,8 +126,9 @@ func _setup_input() -> void:
 	_bind("use_ether", [KEY_X], [])
 	_bind("skills_menu", [KEY_V], [])
 	_bind("inventory", [KEY_I], [])
-	for i in 4:
-		_bind("weapon_%d" % (i + 1), [KEY_1 + i], [])
+	_bind("special", [KEY_1], [JOY_BUTTON_DPAD_UP])
+	_bind("ultimate", [KEY_2], [])
+	_bind("cycle_weapon", [KEY_3], [])
 
 
 func _bind(action: String, keys: Array, buttons: Array, axis: Array = [], mouse: Array = []) -> void:
@@ -377,6 +388,10 @@ func hud_message(text: String) -> void:
 	_hud.show_system(text, 5.0)
 
 
+func in_dungeon() -> bool:
+	return _in_dungeon
+
+
 func boss_is_defeated() -> bool:
 	return _boss_defeated
 
@@ -567,7 +582,8 @@ func _build_hud() -> void:
 		"E   Ataque fuerte   ·   Clic derecho   Bloquear",
 		"Q o Ctrl   Esquivar",
 		"Tab   Fijar objetivo   ·   C   Ventana de estado",
-		"1 2 3 4   Cambiar de arma   ·   G   Celebrar",
+		"1   Poder especial   ·   2   Despertar",
+		"3   Cambiar de arma   ·   G   Celebrar",
 		"F   Hablar / Entrar   ·   F5   Guardar partida",
 		"R   Lanzar magia   ·   T   Cambiar elemento",
 		"Z   Poción   ·   X   Éter   ·   I   Inventario",

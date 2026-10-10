@@ -24,6 +24,7 @@ func _ready() -> void:
 		if not String(child.name).begins_with("Rogue"):
 			child.visible = false
 	ModelUtil.fit_height(_model, 1.75)
+	_model.position.y = 0.0
 	Toon.apply(_model, 0.012, Color(1.0, 0.85, 0.7))
 	_anim = _model.find_child("AnimationPlayer", true, false)
 	for n in ["Idle", "Walking_A", "Running_A"]:

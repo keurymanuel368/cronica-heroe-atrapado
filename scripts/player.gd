@@ -17,6 +17,8 @@ const AIR_CONTROL := 0.35
 const JUMP_VELOCITY := 7.0
 const GRAVITY := 20.0
 const TURN_SPEED := 12.0
+## Altura del agua del río (world.WATER_LEVEL) menos lo que se hunde el héroe al nadar.
+const SWIM_HEIGHT := 0.5 - 0.85
 const DODGE_SPEED := 11.0
 const DODGE_TIME := 0.38
 const LOCK_RANGE := 22.0
@@ -94,6 +96,18 @@ var _hurt_time := 0.0
 var _dead_time := 0.0
 var _since_combat := 99.0
 var _weapon_nodes: Dictionary = {}
+var _swimming := false
+## Poderes: recarga del especial, medidor del despertar (0-100) y su duración.
+var special_cd := 0.0
+var power := 0.0
+var awakened := 0.0
+var _invulnerable := 0.0
+var _dash_time := 0.0
+var _dash_dir := Vector3.ZERO
+var _dash_hit: Array = []
+var _coyote := 0.0
+var _aura: Node3D
+var _shake := 0.0
 ## Ataque pedido mientras no se podía (recibiendo un golpe, en el aire):
 ## se lanza en cuanto se pueda, si no pasó mucho tiempo.
 var _buffered := ""
@@ -215,6 +229,10 @@ func face_yaw(yaw: float) -> void:
 	target = null
 
 
+func facing_yaw() -> float:
+	return _model.rotation.y
+
+
 func total_def() -> int:
 	return def + int(Weapons.DATA[weapon].defense) + int(Rpg.ARMOR_DEF[armor]) + (5 if skills.has("defensa1") else 0)
 
@@ -291,10 +309,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		use_potion("eter")
 	elif event.is_action_pressed("lock_on"):
 		_toggle_lock()
-	else:
-		for i in Weapons.ORDER.size():
-			if event.is_action_pressed("weapon_%d" % (i + 1)):
-				set_weapon(Weapons.ORDER[i])
+	elif event.is_action_pressed("special"):
+		_use_special()
+	elif event.is_action_pressed("ultimate"):
+		_awaken()
+	elif event.is_action_pressed("cycle_weapon") and _attack.is_empty():
+		var i := Weapons.ORDER.find(weapon)
+		set_weapon(Weapons.ORDER[(i + 1) % Weapons.ORDER.size()])
 
 
 # --- Movimiento ------------------------------------------------------------
@@ -323,6 +344,13 @@ func _physics_process(delta: float) -> void:
 	_blocking = Input.is_action_pressed("block") and is_on_floor() and _attack.is_empty() and _dodge_time <= 0.0 and _hurt_time <= 0.0
 	var running := Input.is_action_pressed("run") and not _blocking
 	var target_speed := RUN_SPEED if running else WALK_SPEED
+	if awakened > 0.0:
+		target_speed *= 1.3
+	_update_powers(delta)
+	_swimming = global_position.y < SWIM_HEIGHT and global_position.y > -60.0
+	if _swimming:
+		target_speed *= 0.6
+		_blocking = false
 	if _blocking:
 		target_speed = BLOCK_SPEED
 	var wanted := direction * target_speed
@@ -335,15 +363,29 @@ func _physics_process(delta: float) -> void:
 		if _attack.is_empty() and _start_attack(_buffered == "heavy"):
 			_buffer_time = 0.0
 
-	if _dodge_time > 0.0:
+	if _dash_time > 0.0:
+		_dash_time -= delta
+		velocity.x = _dash_dir.x * 26.0
+		velocity.z = _dash_dir.z * 26.0
+		_dash_strike()
+		if _dash_time <= 0.0:
+			_attack = {}
+	elif _dodge_time > 0.0:
 		_dodge_time -= delta
 		velocity.x = _dodge_dir.x * DODGE_SPEED
 		velocity.z = _dodge_dir.z * DODGE_SPEED
 	elif not _attack.is_empty():
 		_update_attack(delta)
 		wanted = Vector3.ZERO
-		velocity.x = move_toward(velocity.x, 0, 40 * delta)
-		velocity.z = move_toward(velocity.z, 0, 40 * delta)
+		# Pequeño impulso hacia delante al golpear: los ataques avanzan.
+		var lunge := 0.0
+		if _attack.get("dmg", 0) > 0 and not _attack.has("arrows") and _attack_time < _attack_length * 0.35:
+			lunge = 3.2
+		var fwd := Vector3(sin(_model.rotation.y), 0, cos(_model.rotation.y))
+		if target and fwd.length() > 0.0 and target.global_position.distance_to(global_position) < 1.6:
+			lunge = 0.0
+		velocity.x = move_toward(velocity.x, fwd.x * lunge, 40 * delta)
+		velocity.z = move_toward(velocity.z, fwd.z * lunge, 40 * delta)
 	elif _hurt_time > 0.0:
 		velocity.x = move_toward(velocity.x, 0, 30 * delta)
 		velocity.z = move_toward(velocity.z, 0, 30 * delta)
@@ -356,10 +398,17 @@ func _physics_process(delta: float) -> void:
 		velocity.x = move_toward(velocity.x, wanted.x, ACCELERATION * control * delta * target_speed)
 		velocity.z = move_toward(velocity.z, wanted.z, ACCELERATION * control * delta * target_speed)
 
-	if not is_on_floor():
+	if _swimming:
+		# Flota con la cabeza fuera del agua; puede saltar para salir a la orilla.
+		velocity.y = move_toward(velocity.y, (SWIM_HEIGHT - global_position.y) * 5.0, 40.0 * delta)
+		if _jump_requested:
+			velocity.y = JUMP_VELOCITY * 0.85
+	elif not is_on_floor():
 		velocity.y -= GRAVITY * delta
-	if _jump_requested and is_on_floor() and _attack.is_empty() and _dodge_time <= 0.0:
+	_coyote = 0.15 if is_on_floor() else maxf(_coyote - delta, 0.0)
+	if _jump_requested and _coyote > 0.0 and velocity.y <= 0.5 and _attack.is_empty() and _dodge_time <= 0.0:
 		velocity.y = JUMP_VELOCITY
+		_coyote = 0.0
 		_locked_anim_time = 0.0
 		_play("Jump_Start", 0.05)
 	_jump_requested = false
@@ -389,9 +438,20 @@ func _update_camera(delta: float) -> void:
 	_pivot.global_position = _pivot.global_position.lerp(global_position + Vector3(0, 1.6, 0), 1.0 - exp(-14.0 * delta))
 	_pivot.rotation = Vector3(_pitch, _yaw, 0)
 	_arm.spring_length = lerp(_arm.spring_length, _zoom, 1.0 - exp(-10.0 * delta))
+	if _shake > 0.0:
+		_shake = maxf(_shake - delta * 2.5, 0.0)
+		_camera.h_offset = randf_range(-1.0, 1.0) * _shake * 0.25
+		_camera.v_offset = randf_range(-1.0, 1.0) * _shake * 0.25
+	else:
+		_camera.h_offset = 0.0
+		_camera.v_offset = 0.0
 
 
 func _update_animation(speed: float) -> void:
+	if _swimming and _attack.is_empty():
+		_play("Walking_A" if speed > 0.3 else "Jump_Idle", 0.2)
+		_anim.speed_scale = 0.7
+		return
 	if _dodge_time > 0.0 or not _attack.is_empty() or _hurt_time > 0.0:
 		return
 	if _blocking:
@@ -507,9 +567,11 @@ func _melee_hit(a: Dictionary) -> void:
 		var damage := int(a.dmg) + total_atk() / 2
 		if skills.has("maestria"):
 			damage = int(damage * 1.2)
-		enemy.take_hit(damage, global_position, a.get("stagger", false), float(a.get("push", 2.0)))
+		enemy.take_hit(_power_damage(damage), global_position, a.get("stagger", false), float(a.get("push", 2.0)))
 		hit_any = true
 	if hit_any:
+		add_power(7.0)
+		shake(0.35 if a.get("stagger", false) else 0.2)
 		_hitstop()
 
 
@@ -535,7 +597,7 @@ func _shoot_arrows(count: int, damage: int) -> void:
 		get_parent().add_child(p)
 		p.global_position = global_position + Vector3(0, 1.3, 0) + aim * 0.6
 		p.velocity = dir * 34.0
-		p.damage = damage + total_atk() / 2
+		p.damage = _power_damage(damage + total_atk() / 2)
 		p.gravity = 2.0
 		p.life = 1.6
 		p.source = self
@@ -775,10 +837,17 @@ func _start_dodge() -> void:
 
 ## Recibe un golpe enemigo. La esquiva lo evita; el bloqueo lo reduce.
 func take_hit(damage: int, from: Vector3, _attacker: Node3D = null) -> void:
-	if not is_alive() or _dodge_time > 0.0:
+	if not is_alive() or _dodge_time > 0.0 or _dash_time > 0.0:
+		return
+	if _invulnerable > 0.0:
+		Fx.number(get_parent(), global_position + Vector3(0, 2.1, 0), "Inmune", Color(0.6, 0.85, 1.0), 44)
 		return
 	_since_combat = 0.0
 	var amount := maxi(1, damage - total_def() / 2)
+	if awakened > 0.0:
+		amount = maxi(1, amount / 2)
+	add_power(4.0)
+	shake(0.3)
 	var away := global_position - from
 	away.y = 0
 	var fwd := Vector3(sin(_model.rotation.y), 0, cos(_model.rotation.y))
@@ -802,6 +871,9 @@ func take_hit(damage: int, from: Vector3, _attacker: Node3D = null) -> void:
 
 func _die() -> void:
 	_attack = {}
+	_dash_time = 0.0
+	awakened = 0.0
+	_invulnerable = 0.0
 	target = null
 	_anim.play("Death_A", 0.05)
 	_dead_time = 3.5
@@ -883,3 +955,210 @@ func _update_lock(delta: float) -> void:
 	var d := target.global_position - global_position
 	var wanted_yaw := atan2(-d.x, -d.z)
 	_yaw = lerp_angle(_yaw, wanted_yaw, 1.0 - exp(-6.0 * delta))
+
+
+# --- Poderes especiales ------------------------------------------------------
+
+func shake(amount: float) -> void:
+	_shake = maxf(_shake, amount)
+
+
+func add_power(amount: float) -> void:
+	if awakened > 0.0:
+		return
+	power = minf(100.0, power + amount)
+
+
+func _power_damage(damage: int) -> int:
+	return damage * 2 if awakened > 0.0 else damage
+
+
+func special_name() -> String:
+	return Weapons.SPECIALS[weapon].name
+
+
+func _update_powers(delta: float) -> void:
+	special_cd = maxf(special_cd - delta, 0.0)
+	_invulnerable = maxf(_invulnerable - delta, 0.0)
+	if awakened > 0.0:
+		awakened -= delta
+		power = 100.0 * awakened / 12.0
+		if awakened <= 0.0:
+			awakened = 0.0
+			power = 0.0
+			if _aura:
+				_aura.queue_free()
+				_aura = null
+	if _aura == null and _invulnerable > 0.0 or awakened > 0.0 and _aura == null:
+		_make_aura(Color(1.0, 0.82, 0.3) if awakened > 0.0 else Color(0.5, 0.8, 1.0))
+	elif _aura and awakened <= 0.0 and _invulnerable <= 0.0:
+		_aura.queue_free()
+		_aura = null
+	if _aura:
+		_aura.rotation.y += delta * 2.0
+
+
+func _make_aura(color: Color) -> void:
+	_aura = Node3D.new()
+	var ball := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 1.2
+	sphere.height = 2.6
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(color, 0.18)
+	mat.emission_enabled = true
+	mat.emission = color
+	mat.emission_energy_multiplier = 1.5
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	sphere.material = mat
+	ball.mesh = sphere
+	ball.position.y = 1.0
+	_aura.add_child(ball)
+	var light := OmniLight3D.new()
+	light.light_color = color
+	light.light_energy = 2.5
+	light.omni_range = 6.0
+	light.position.y = 1.4
+	_aura.add_child(light)
+	var sparks := GPUParticles3D.new()
+	sparks.amount = 40
+	sparks.lifetime = 1.0
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm.emission_sphere_radius = 0.9
+	pm.direction = Vector3.UP
+	pm.spread = 20.0
+	pm.initial_velocity_min = 1.0
+	pm.initial_velocity_max = 2.5
+	pm.gravity = Vector3.ZERO
+	pm.scale_min = 0.5
+	pm.scale_max = 1.0
+	sparks.process_material = pm
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.08, 0.08)
+	var qm := StandardMaterial3D.new()
+	qm.albedo_color = color
+	qm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	qm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	quad.material = qm
+	sparks.draw_pass_1 = quad
+	sparks.position.y = 1.0
+	_aura.add_child(sparks)
+	add_child(_aura)
+
+
+## Tecla 1: el poder especial del arma que lleva.
+func _use_special() -> void:
+	if special_cd > 0.0 or not is_on_floor() or not _attack.is_empty() or _dodge_time > 0.0 or _hurt_time > 0.0:
+		if special_cd > 0.0:
+			Fx.number(get_parent(), global_position + Vector3(0, 2.3, 0), "Recargando %.0f s" % ceilf(special_cd), Color(0.7, 0.8, 1.0), 36)
+		return
+	special_cd = float(Weapons.SPECIALS[weapon].cd)
+	if skills.has("esquiva"):
+		special_cd *= 0.85
+	_since_combat = 0.0
+	var aim := _aim_direction()
+	_model.rotation.y = atan2(aim.x, aim.z)
+	Fx.number(get_parent(), global_position + Vector3(0, 2.6, 0), "¡%s!" % special_name(), Color(1.0, 0.85, 0.35), 60)
+	var power_atk := total_atk()
+	match weapon:
+		"espada":
+			_lock_anim("2H_Melee_Attack_Spin", 1.6, 1.4)
+			for i in 5:
+				get_tree().create_timer(0.12 + i * 0.18).timeout.connect(func():
+					if not is_alive():
+						return
+					_burst(Color(1.0, 0.9, 0.5), 4.5)
+					_area_hit(4.5, 12 + power_atk, i == 4, 4.0)
+					shake(0.25))
+		"escudo":
+			_lock_anim("Block_Attack", 1.0, 0.8)
+			get_tree().create_timer(0.3).timeout.connect(func():
+				_burst(Color(0.5, 0.8, 1.0), 7.0)
+				_area_hit(7.0, 20 + power_atk, true, 14.0)
+				shake(0.6)
+				_invulnerable = 3.0)
+		"lanza":
+			_lock_anim("2H_Melee_Attack_Stab", 1.4, 0.4)
+			_dash_dir = aim
+			_dash_time = 0.32
+			_dash_hit = []
+			_burst(Color(0.6, 0.85, 1.0), 2.0)
+		"arco":
+			_lock_anim("2H_Ranged_Shooting", 1.2, 0.8)
+			var center := global_position + aim * 10.0
+			if target:
+				center = target.global_position
+			_arrow_rain(center, 30 + power_atk)
+
+
+func _lock_anim(anim_name: String, speed: float, length: float) -> void:
+	_attack = {"anim": anim_name, "dmg": 0, "hit": 1.0, "speed": speed, "range": 0, "arc": 0}
+	_attack_time = 0.0
+	_attack_length = length
+	_attack_hit_done = true
+	_anim.play(anim_name, 0.06, speed)
+	_anim.seek(0.0, true)
+
+
+func _area_hit(radius: float, damage: int, stagger: bool, push: float) -> void:
+	var hit := false
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if enemy.is_alive() and enemy.global_position.distance_to(global_position) < radius:
+			enemy.take_hit(_power_damage(damage), global_position, stagger, push)
+			hit = true
+	if hit:
+		add_power(5.0)
+
+
+func _dash_strike() -> void:
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if enemy.is_alive() and not enemy in _dash_hit and enemy.global_position.distance_to(global_position) < 2.4:
+			_dash_hit.append(enemy)
+			enemy.take_hit(_power_damage(34 + total_atk()), global_position, true, 6.0)
+			add_power(6.0)
+			shake(0.35)
+	if randf() < 0.6:
+		Fx.number(get_parent(), global_position + Vector3(randf_range(-0.5, 0.5), 1.2, randf_range(-0.5, 0.5)), "⚡", Color(0.7, 0.9, 1.0), 40)
+
+
+func _arrow_rain(center: Vector3, damage: int) -> void:
+	var arrow_scene := load("res://assets/kaykit/weapons/arrow.gltf") as PackedScene
+	_burst(Color(0.9, 0.95, 0.6), 2.0)
+	for i in 18:
+		await get_tree().create_timer(0.07).timeout
+		var p := Node3D.new()
+		p.set_script(PROJECTILE)
+		var model: Node3D = arrow_scene.instantiate()
+		model.scale = Vector3.ONE * 1.8
+		model.rotation.x = -PI * 0.5
+		p.add_child(model)
+		get_parent().add_child(p)
+		var spot := center + Vector3(randf_range(-4.0, 4.0), 0, randf_range(-4.0, 4.0))
+		p.global_position = spot + Vector3(1.0, 14.0, 0)
+		p.velocity = Vector3(-2.0, -26.0, 0)
+		p.damage = _power_damage(damage)
+		p.radius = 1.4
+		p.stagger = i % 4 == 0
+		p.life = 0.7
+		p.source = self
+
+
+## Tecla 2: «Despertar del Héroe», cuando el medidor de poder está lleno.
+func _awaken() -> void:
+	if awakened > 0.0:
+		return
+	if power < 100.0:
+		Fx.number(get_parent(), global_position + Vector3(0, 2.3, 0), "Poder %d%%" % int(power), Color(1.0, 0.8, 0.4), 36)
+		return
+	awakened = 12.0
+	_since_combat = 0.0
+	hp = mini(max_hp, hp + max_hp / 4)
+	stats_changed.emit()
+	_lock_anim("Cheer", 1.4, 0.7)
+	Fx.number(get_parent(), global_position + Vector3(0, 2.8, 0), "¡DESPERTAR DEL HÉROE!", Color(1.0, 0.85, 0.3), 72)
+	_burst(Color(1.0, 0.85, 0.3), 9.0)
+	_area_hit(8.0, 40 + total_atk(), true, 12.0)
+	shake(0.8)

@@ -35,6 +35,8 @@ func _ready() -> void:
 		if is_gear:
 			child.visible = n in gear
 	ModelUtil.fit_height(_model, height)
+	# Los personajes de KayKit ya tienen los pies en el origen.
+	_model.position.y = 0.0
 	Toon.apply(_model, 0.012)
 	_anim = _model.find_child("AnimationPlayer", true, false)
 	_anim.get_animation("Idle").loop_mode = Animation.LOOP_LINEAR

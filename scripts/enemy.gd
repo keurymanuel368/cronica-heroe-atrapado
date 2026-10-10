@@ -81,6 +81,7 @@ var _patrol_target := Vector3.ZERO
 var _attack_done := false
 var _cooldown := 0.0
 var _model: Node3D
+var _base_scale := Vector3.ONE
 var _anim: AnimationPlayer
 var _bar_bg: Sprite3D
 var _bar_fg: Sprite3D
@@ -109,6 +110,9 @@ func _ready() -> void:
 	_model = (load(data.model) as PackedScene).instantiate()
 	add_child(_model)
 	ModelUtil.fit_height(_model, data.height)
+	# Los modelos de KayKit ya tienen los pies en el origen.
+	_model.position.y = 0.0
+	_base_scale = _model.scale
 	_base_y = _model.position.y
 	var skeleton: Skeleton3D = _model.find_children("*", "Skeleton3D", true, false)[0]
 	_attach(skeleton, "handslot.r", data.weapon)
@@ -337,6 +341,10 @@ func take_hit(damage: int, from: Vector3, stagger: bool, push: float) -> bool:
 		return false
 	var amount := maxi(1, int(damage * randf_range(0.9, 1.1)) - int(data.def))
 	hp -= amount
+	# Se encoge un instante al recibir el golpe.
+	_model.scale = Vector3(1.15, 0.85, 1.15) * _base_scale
+	var tw := _model.create_tween()
+	tw.tween_property(_model, "scale", _base_scale, 0.15)
 	_update_bar()
 	_set_bar_visible(true)
 	Fx.number(get_parent(), global_position + Vector3(0, data.height + 0.2, 0), str(amount), Color(1.0, 0.95, 0.6) if not stagger else Color(1.0, 0.6, 0.25))
