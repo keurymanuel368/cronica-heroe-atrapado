@@ -10,6 +10,7 @@ var _taps: Array = []
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--capture="):
 			_path = arg.trim_prefix("--capture=")

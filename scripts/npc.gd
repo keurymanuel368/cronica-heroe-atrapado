@@ -16,6 +16,8 @@ var lines: Array = []
 ## Qué pasa al terminar la charla: "" (nada) o "rest" (descansar y guardar).
 var action := ""
 var height := 1.75
+## Tras la primera charla, los que tienen tienda o gremio solo saludan.
+var talked := false
 
 var _model: Node3D
 var _anim: AnimationPlayer

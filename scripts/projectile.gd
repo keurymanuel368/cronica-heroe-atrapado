@@ -10,6 +10,8 @@ var gravity := 0.0
 var source: Node3D
 ## Si es de un enemigo, daña al héroe en vez de a los enemigos.
 var hostile := false
+## Parte del daño que vuelve como vida al héroe (magia de oscuridad).
+var drain := 0.0
 
 
 func _physics_process(delta: float) -> void:
@@ -33,5 +35,9 @@ func _physics_process(delta: float) -> void:
 			continue
 		if enemy.global_position.distance_to(global_position - Vector3(0, 1.0, 0)) < radius + 0.5:
 			enemy.take_hit(damage, global_position - velocity.normalized(), stagger, 0.0)
+			if drain > 0.0 and source and source.is_alive():
+				var heal := int(damage * drain)
+				source.hp = mini(source.max_hp, source.hp + heal)
+				source.stats_changed.emit()
 			queue_free()
 			return

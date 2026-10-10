@@ -3,6 +3,7 @@ extends CanvasLayer
 ## Sistema, ventana de estado, marcador del objetivo fijado y elección de arma.
 
 const Weapons := preload("res://scripts/weapons.gd")
+const Rpg := preload("res://scripts/rpg.gd")
 
 const GOLD := Color(0.91, 0.76, 0.42)
 const RUNE := Color(0.44, 0.83, 1.0)
@@ -23,6 +24,8 @@ var _clock_label: Label
 var _boss_box: VBoxContainer
 var _boss_bar: ProgressBar
 var _boss_name: Label
+var _tracker: Label
+var _gold_label: Label
 
 var _level_label: Label
 var _hp_bar: ProgressBar
@@ -150,13 +153,14 @@ func _build_weapon_box() -> void:
 	panel.anchor_right = 1.0
 	panel.anchor_top = 1.0
 	panel.anchor_bottom = 1.0
-	panel.offset_left = -330
+	panel.offset_left = -470
 	panel.offset_right = -24
-	panel.offset_top = -92
+	panel.offset_top = -24
 	panel.offset_bottom = -24
+	panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	var v := VBoxContainer.new()
 	v.add_child(_label("ARMA", 13, RUNE))
-	_weapon_label = _label("", 18, GOLD)
+	_weapon_label = _label("", 16, GOLD)
 	v.add_child(_weapon_label)
 	panel.add_child(v)
 	add_child(panel)
@@ -338,6 +342,22 @@ func _build_zone_and_clock() -> void:
 	_clock_label.offset_top = 24
 	_clock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	add_child(_clock_label)
+	_gold_label = _label("", 18, GOLD)
+	_gold_label.anchor_left = 1.0
+	_gold_label.anchor_right = 1.0
+	_gold_label.offset_left = -360
+	_gold_label.offset_right = -24
+	_gold_label.offset_top = 48
+	_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	add_child(_gold_label)
+	_tracker = _label("", 16)
+	_tracker.anchor_left = 1.0
+	_tracker.anchor_right = 1.0
+	_tracker.offset_left = -420
+	_tracker.offset_right = -24
+	_tracker.offset_top = 80
+	_tracker.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	add_child(_tracker)
 
 
 func _build_boss_bar() -> void:
@@ -375,13 +395,27 @@ func _nearest_npc() -> Node:
 func _talk_next() -> void:
 	if _talking == null:
 		return
-	if _line >= _talking.lines.size():
+	var short: bool = _talking.talked or (_talking.action == "guild" and player.guild_member)
+	var total: int = 1 if short else _talking.lines.size()
+	if _line >= total:
 		var finished := _talking
 		_talking = null
 		_dialog.visible = false
-		if finished.action == "rest" and main:
-			main.rest()
-			show_system("Dormiste hasta el amanecer.\nVida y maná al máximo. Partida guardada.", 4.0)
+		finished.talked = true
+		match finished.action:
+			"rest":
+				if main:
+					main.rest()
+				show_system("Dormiste hasta el amanecer.\nVida y maná al máximo. Partida guardada.", 4.0)
+			"guild":
+				if not player.guild_member:
+					player.guild_member = true
+					show_system("Registrado en el Gremio de Aventureros.\nRango F. Cumple misiones para subir de rango.", 5.0)
+				main.open_menu("board")
+			"shop":
+				main.open_menu("shop")
+			"smith":
+				main.open_menu("smith")
 		return
 	_dialog_name.text = finished_name(_talking)
 	_dialog_text.text = _talking.lines[_line]
@@ -435,7 +469,15 @@ func _refresh() -> void:
 	_exp_bar.max_value = player.exp_to_next()
 	_exp_bar.value = player.exp_points
 	var w: Dictionary = Weapons.DATA[player.weapon]
-	_weapon_label.text = "%s   (1-4 cambiar)" % w.name
+	_weapon_label.text = "%s +%d   (1-4)\nMagia: %s · %s  (R lanzar · T cambiar)\nPociones %d (Z)  ·  Éter %d (X)" % [w.name, player.forge,
+		Rpg.MAGIC[player.element].name, Rpg.MAGIC[player.element].spell, player.item_count("pocion"), player.item_count("eter")]
+	_gold_label.text = "%d de oro%s" % [player.gold, ("   ·   %d punto(s) de habilidad (V)" % player.skill_points) if player.skill_points > 0 else ""]
+	var lines: Array = []
+	for id in player.quests:
+		var q := Rpg.quest(id)
+		var ready: bool = player.quest_ready(id)
+		lines.append("%s  %d/%d%s" % [q.name, player.quest_progress(id), q.count, "  ✔ entrégala en el gremio" if ready else ""])
+	_tracker.text = ("MISIONES\n" + "\n".join(lines)) if not lines.is_empty() else ""
 	if _status.visible:
 		_status_label.text = "\n".join([
 			"Nombre:  Héroe atrapado",
@@ -443,11 +485,14 @@ func _refresh() -> void:
 			"EXP:  %d / %d" % [player.exp_points, player.exp_to_next()],
 			"Vida:  %d / %d" % [player.hp, player.max_hp],
 			"Maná:  %d / %d" % [int(player.mp), player.max_mp],
-			"Ataque:  %d" % player.atk,
+			"Ataque:  %d" % player.total_atk(),
 			"Defensa:  %d  (+%d del arma)" % [player.total_def(), int(w.defense)],
 			"Arma:  %s" % w.name,
 			"Bloqueo:  %d%% del daño" % int(float(w.block) * 100),
-			"Magia:  Bola de fuego (%d de maná)" % player.FIREBALL_COST,
+			"Magia:  %s (%d de maná)" % [Rpg.MAGIC[player.element].spell, player.spell_cost(player.element)],
+			"Armadura:  %s" % Rpg.ARMOR_NAMES[player.armor],
+			"Gremio:  %s" % (("rango %s  (%d puntos)" % [Rpg.rank_for(player.guild_points), player.guild_points]) if player.guild_member else "sin registrar"),
+			"Oro:  %d" % player.gold,
 			"Enemigos derrotados:  %d" % player.kills,
 		])
 

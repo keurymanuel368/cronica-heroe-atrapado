@@ -20,11 +20,15 @@ var _sun: DirectionalLight3D
 var _env: Environment
 var _sky_mat: ProceduralSkyMaterial
 var _autosave := 90.0
+## La ayuda de controles se oculta sola (H la vuelve a mostrar).
+var _help_timer := 40.0
 var _zone_timer := 0.0
 var _zone := ""
 var _dungeon: Node3D
 var _in_dungeon := false
 var _boss_defeated := false
+var _menus: CanvasLayer
+var _escort: Node3D
 
 const SaveGame := preload("res://scripts/savegame.gd")
 const NPC_SCRIPT := preload("res://scripts/npc.gd")
@@ -65,6 +69,16 @@ func _ready() -> void:
 	add_child(_hud)
 	_hud.main = self
 	_hud.setup(_player, loaded)
+	_menus = preload("res://scripts/menus.gd").new()
+	_menus.player = _player
+	_menus.main = self
+	add_child(_menus)
+	_spawn_pickups()
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--menu="):
+			open_menu.call_deferred(arg.trim_prefix("--menu="))
+	if _player.quests.has("q5") and not _player.quest_ready("q5"):
+		on_quest_accepted("q5")
 	if loaded:
 		_system_timer = 0.0
 		_system_panel.visible = false
@@ -97,6 +111,11 @@ func _setup_input() -> void:
 	_bind("status", [KEY_C], [JOY_BUTTON_START])
 	_bind("interact", [KEY_F], [JOY_BUTTON_DPAD_DOWN])
 	_bind("save_game", [KEY_F5], [])
+	_bind("cycle_element", [KEY_T], [JOY_BUTTON_DPAD_RIGHT])
+	_bind("use_potion", [KEY_Z], [JOY_BUTTON_DPAD_LEFT])
+	_bind("use_ether", [KEY_X], [])
+	_bind("skills_menu", [KEY_V], [])
+	_bind("inventory", [KEY_I], [])
 	for i in 4:
 		_bind("weapon_%d" % (i + 1), [KEY_1 + i], [])
 
@@ -129,6 +148,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
 	elif event.is_action_pressed("toggle_help"):
 		_help_panel.visible = not _help_panel.visible
+	elif event.is_action_pressed("skills_menu") and not _menus.is_open():
+		open_menu("skills")
+	elif event.is_action_pressed("inventory") and not _menus.is_open():
+		open_menu("inventory")
 	elif event.is_action_pressed("save_game"):
 		save_game()
 		_hud.show_system("Partida guardada.", 2.5)
@@ -346,6 +369,87 @@ func _exit_dungeon() -> void:
 	_player.face_yaw(PI / 2.0)
 
 
+func open_menu(kind: String) -> void:
+	_menus.open(kind)
+
+
+func hud_message(text: String) -> void:
+	_hud.show_system(text, 5.0)
+
+
+func boss_is_defeated() -> bool:
+	return _boss_defeated
+
+
+## Hierbas en la pradera y hongos lunares en el bosque.
+func _spawn_pickups() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	var placed := 0
+	while placed < 30:
+		var x := rng.randf_range(-70, 70)
+		var z := rng.randf_range(-60, 30)
+		var h: float = _world.height(x, z)
+		if h < 2.0 or _world.road_distance(x, z) < 3.0 or Vector2(x, z).distance_to(_world.ARENA) < 18.0:
+			continue
+		_add_pickup("hierba", _world.surface(x, z))
+		placed += 1
+	placed = 0
+	while placed < 20:
+		var p: Vector2 = _world.FOREST + Vector2(rng.randf_range(-1, 1), rng.randf_range(-1, 1)) * 40.0
+		if _world.height(p.x, p.y) < 2.2:
+			continue
+		_add_pickup("hongo", _world.surface(p.x, p.y))
+		placed += 1
+
+
+func _add_pickup(item: String, at: Vector3) -> void:
+	var p := Node3D.new()
+	p.set_script(preload("res://scripts/pickup.gd"))
+	p.item = item
+	p.position = at
+	add_child(p)
+
+
+func on_quest_accepted(id: String) -> void:
+	if id != "q5" or _escort:
+		return
+	_escort = Node3D.new()
+	_escort.set_script(preload("res://scripts/escort.gd"))
+	_escort.world = _world
+	var start: Vector2 = _world.VILLAGE + Vector2(-4, -2)
+	_escort.position = _world.surface(start.x, start.y)
+	_escort.goal = _world.surface(_world.WINDMILL.x, _world.WINDMILL.y)
+	_escort.on_arrive = _escort_arrived
+	_escort.on_ambush = _escort_ambush
+	add_child(_escort)
+	_hud.show_system("Bram te espera en la plaza de la aldea.\nLlévalo hasta el molino del oeste.", 5.0)
+
+
+func _escort_ambush(at: Vector3) -> void:
+	_hud.show_system("¡Emboscada! Protege a Bram.", 3.0)
+	for i in 3:
+		var a := TAU * i / 3.0
+		var e := CharacterBody3D.new()
+		e.set_script(preload("res://scripts/enemy.gd"))
+		e.kind = "minion" if i < 2 else "rogue"
+		e.once = true
+		var p := Vector2(at.x, at.z) + Vector2(cos(a), sin(a)) * 9.0
+		e.home = _world.surface(p.x, p.y)
+		e.position = e.home + Vector3(0, 0.5, 0)
+		add_child(e)
+
+
+func _escort_arrived() -> void:
+	if _player.quests.has("q5"):
+		_player.quests["q5"] = 1
+		_player.stats_changed.emit()
+	_hud.show_system("Bram llegó sano y salvo al molino.\nVuelve al gremio para cobrar la misión.", 5.0)
+	var bram := _escort
+	_escort = null
+	get_tree().create_timer(8.0).timeout.connect(func(): bram.queue_free())
+
+
 func on_boss_defeated(_boss: Node) -> void:
 	_boss_defeated = true
 	_hud.show_system("¡Derrotaste al Rey Esqueleto!\nEl Sistema registra tu hazaña. Una grieta de luz se abre en el cielo...", 7.0)
@@ -374,6 +478,10 @@ func zone_at(p: Vector3) -> String:
 
 func _process(delta: float) -> void:
 	_autosave -= delta
+	if _help_timer > 0.0:
+		_help_timer -= delta
+		if _help_timer <= 0.0:
+			_help_panel.visible = false
 	if _autosave <= 0.0:
 		_autosave = 90.0
 		save_game()
@@ -437,7 +545,7 @@ func _build_hud() -> void:
 	title.position = Vector2(24, 20)
 	title.add_child(_label("CRÓNICA DEL HÉROE ATRAPADO", 26, gold))
 	var version := FileAccess.get_file_as_string("res://version.txt").strip_edges()
-	title.add_child(_label("Fase 3 · El mundo · versión %s" % version, 16, rune))
+	title.add_child(_label("Fase 4 · Gremio y misiones · versión %s" % version, 16, rune))
 	layer.add_child(title)
 
 	_help_panel = PanelContainer.new()
@@ -457,10 +565,13 @@ func _build_hud() -> void:
 		"Ratón   Girar la cámara (clic para empezar)",
 		"Clic izquierdo   Ataque ligero (combo)",
 		"E   Ataque fuerte   ·   Clic derecho   Bloquear",
-		"Q o Ctrl   Esquivar   ·   R   Bola de fuego",
+		"Q o Ctrl   Esquivar",
 		"Tab   Fijar objetivo   ·   C   Ventana de estado",
 		"1 2 3 4   Cambiar de arma   ·   G   Celebrar",
 		"F   Hablar / Entrar   ·   F5   Guardar partida",
+		"R   Lanzar magia   ·   T   Cambiar elemento",
+		"Z   Poción   ·   X   Éter   ·   I   Inventario",
+		"V   Árbol de habilidades",
 		"F11   Pantalla completa   ·   Esc   Soltar el ratón",
 		"H   Ocultar esta ayuda",
 	]:

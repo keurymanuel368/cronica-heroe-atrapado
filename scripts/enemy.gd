@@ -68,6 +68,8 @@ const ATTACK_RANGE := 1.9
 const RESPAWN_TIME := 18.0
 
 var kind := "minion"
+## Si es true no reaparece al morir (emboscadas).
+var once := false
 var home := Vector3.ZERO
 var data: Dictionary
 
@@ -362,7 +364,7 @@ func _update_bar() -> void:
 
 func _die() -> void:
 	_state = State.DEAD
-	_timer = RESPAWN_TIME if data.get("respawn", true) else INF
+	_timer = RESPAWN_TIME if data.get("respawn", true) and not once else INF
 	_anim.play("Death_A", 0.05)
 	_set_bar_visible(false)
 	_shape.disabled = true
@@ -370,6 +372,12 @@ func _die() -> void:
 	var player := _player()
 	if player:
 		player.gain_exp(data.exp, global_position + Vector3(0, data.height, 0))
+		player.on_enemy_killed(kind)
+		var coins := int(data.exp * 0.6) + randi_range(1, 6)
+		player.add_gold(coins)
+		Fx.number(get_parent(), global_position + Vector3(0, data.height + 0.6, 0), "+%d oro" % coins, Color(1.0, 0.85, 0.3), 40)
+		if randf() < 0.55:
+			player.add_item("hueso", 1)
 	if is_boss():
 		get_tree().call_group("boss_listeners", "on_boss_defeated", self)
 	var tween := create_tween()

@@ -7,6 +7,7 @@ const ModelUtil := preload("res://scripts/model_util.gd")
 const Weapons := preload("res://scripts/weapons.gd")
 const Fx := preload("res://scripts/fx.gd")
 const PROJECTILE := preload("res://scripts/projectile.gd")
+const Rpg := preload("res://scripts/rpg.gd")
 
 const WALK_SPEED := 3.4
 const RUN_SPEED := 7.2
@@ -19,7 +20,6 @@ const TURN_SPEED := 12.0
 const DODGE_SPEED := 11.0
 const DODGE_TIME := 0.38
 const LOCK_RANGE := 22.0
-const FIREBALL_COST := 15
 
 const MOUSE_SENSITIVITY := 0.0025
 const STICK_SENSITIVITY := 2.6
@@ -53,6 +53,18 @@ var atk := 10
 var def := 4
 var kills := 0
 var weapon := "espada"
+var gold := 20
+var items: Dictionary = {"pocion": 2}
+var skills: Dictionary = {"fuego": true}
+var skill_points := 1
+var element := "fuego"
+var armor := 0
+var forge := 0
+var guild_member := false
+var guild_points := 0
+## Misiones activas: id -> progreso. Y las ya entregadas.
+var quests: Dictionary = {}
+var quests_done: Array = []
 var target: Node3D = null
 
 var _model: Node3D
@@ -204,7 +216,7 @@ func face_yaw(yaw: float) -> void:
 
 
 func total_def() -> int:
-	return def + int(Weapons.DATA[weapon].defense)
+	return def + int(Weapons.DATA[weapon].defense) + int(Rpg.ARMOR_DEF[armor]) + (5 if skills.has("defensa1") else 0)
 
 
 func is_alive() -> bool:
@@ -270,7 +282,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("dodge"):
 		_start_dodge()
 	elif event.is_action_pressed("magic"):
-		_cast_fireball()
+		_cast_spell()
+	elif event.is_action_pressed("cycle_element"):
+		cycle_element()
+	elif event.is_action_pressed("use_potion"):
+		use_potion("pocion")
+	elif event.is_action_pressed("use_ether"):
+		use_potion("eter")
 	elif event.is_action_pressed("lock_on"):
 		_toggle_lock()
 	else:
@@ -486,7 +504,9 @@ func _melee_hit(a: Dictionary) -> void:
 			continue
 		if a.arc < 360 and d.length() > 0.5 and fwd.angle_to(d.normalized()) > half_arc:
 			continue
-		var damage := int(a.dmg) + atk / 2
+		var damage := int(a.dmg) + total_atk() / 2
+		if skills.has("maestria"):
+			damage = int(damage * 1.2)
 		enemy.take_hit(damage, global_position, a.get("stagger", false), float(a.get("push", 2.0)))
 		hit_any = true
 	if hit_any:
@@ -515,18 +535,39 @@ func _shoot_arrows(count: int, damage: int) -> void:
 		get_parent().add_child(p)
 		p.global_position = global_position + Vector3(0, 1.3, 0) + aim * 0.6
 		p.velocity = dir * 34.0
-		p.damage = damage + atk / 2
+		p.damage = damage + total_atk() / 2
 		p.gravity = 2.0
 		p.life = 1.6
 		p.source = self
 
 
-func _cast_fireball() -> void:
-	if mp < FIREBALL_COST or not _attack.is_empty() or _dodge_time > 0.0 or not is_on_floor():
+func spell_cost(element: String) -> int:
+	var c: int = Rpg.MAGIC[element].cost
+	if skills.has("mana2"):
+		c = int(round(c * 0.75))
+	return c
+
+
+func cycle_element() -> void:
+	var known: Array = []
+	for e in Rpg.ELEMENTS:
+		if skills.has(e):
+			known.append(e)
+	if known.is_empty():
 		return
-	mp -= FIREBALL_COST
+	element = known[(known.find(element) + 1) % known.size()]
 	stats_changed.emit()
-	_attack = {"anim": "Spellcast_Shoot", "dmg": 0, "hit": 0.45, "speed": 1.3, "range": 0, "arc": 0, "fireball": true}
+
+
+func _cast_spell() -> void:
+	if not skills.has(element):
+		return
+	var cost := spell_cost(element)
+	if mp < cost or not _attack.is_empty() or _dodge_time > 0.0 or not is_on_floor():
+		return
+	mp -= cost
+	stats_changed.emit()
+	_attack = {"anim": "Spellcast_Shoot", "dmg": 0, "hit": 0.45, "speed": 1.3, "range": 0, "arc": 0}
 	_attack_time = 0.0
 	_attack_length = _anim.get_animation("Spellcast_Shoot").length / 1.3
 	_attack_hit_done = true
@@ -537,34 +578,173 @@ func _cast_fireball() -> void:
 	await get_tree().create_timer(_attack_length * 0.45).timeout
 	if not is_alive():
 		return
+	var color: Color = Rpg.MAGIC[element].color
+	var power := total_atk()
+	match element:
+		"fuego":
+			_spell_orb(aim, color, 26 + power, 20.0, 1.3, true, 0.28)
+		"agua":
+			var heal := 30 + level * 6
+			hp = mini(max_hp, hp + heal)
+			Fx.number(get_parent(), global_position + Vector3(0, 2.2, 0), "+%d" % heal, Color(0.4, 1.0, 0.6), 56)
+			_burst(color, 2.5)
+			stats_changed.emit()
+		"viento":
+			for i in 3:
+				_spell_orb((Basis(Vector3.UP, (i - 1) * 0.22) * aim).normalized(), color, 12 + power / 2, 30.0, 0.9, false, 0.16)
+		"tierra":
+			_burst(color, 5.5)
+			for enemy in get_tree().get_nodes_in_group("enemies"):
+				if enemy.is_alive() and enemy.global_position.distance_to(global_position) < 6.0:
+					enemy.take_hit(22 + power, global_position, true, 10.0)
+		"luz":
+			_spell_orb(aim, color, int((40 + power) * 1.5), 34.0, 1.2, true, 0.35)
+		"oscuridad":
+			var orb := _spell_orb(aim, color, 22 + power, 18.0, 1.1, false, 0.3)
+			orb.drain = 0.5
+
+
+func _spell_orb(dir: Vector3, color: Color, damage: int, speed: float, radius: float, stagger: bool, size: float) -> Node3D:
 	var p := Node3D.new()
 	p.set_script(PROJECTILE)
 	var ball := MeshInstance3D.new()
 	var sphere := SphereMesh.new()
-	sphere.radius = 0.28
-	sphere.height = 0.56
+	sphere.radius = size
+	sphere.height = size * 2.0
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(1.0, 0.5, 0.1)
+	mat.albedo_color = color
 	mat.emission_enabled = true
-	mat.emission = Color(1.0, 0.45, 0.1)
+	mat.emission = color
 	mat.emission_energy_multiplier = 3.0
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	sphere.material = mat
 	ball.mesh = sphere
 	p.add_child(ball)
 	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.55, 0.2)
+	light.light_color = color
 	light.light_energy = 2.0
 	light.omni_range = 5.0
 	p.add_child(light)
 	get_parent().add_child(p)
-	p.global_position = global_position + Vector3(0, 1.4, 0) + aim * 0.8
-	p.velocity = aim * 20.0
-	p.damage = 26 + atk
-	p.radius = 1.3
-	p.stagger = true
+	p.global_position = global_position + Vector3(0, 1.4, 0) + dir * 0.8
+	p.velocity = dir * speed
+	p.damage = damage
+	p.radius = radius
+	p.stagger = stagger
 	p.life = 2.0
 	p.source = self
+	return p
+
+
+## Anillo de luz que se expande alrededor del héroe (sanación, temblor).
+func _burst(color: Color, radius: float) -> void:
+	var ring := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.8
+	torus.outer_radius = 1.0
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.emission_enabled = true
+	mat.emission = color
+	mat.emission_energy_multiplier = 2.0
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	torus.material = mat
+	ring.mesh = torus
+	get_parent().add_child(ring)
+	ring.global_position = global_position + Vector3(0, 0.3, 0)
+	var tween := ring.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(ring, "scale", Vector3.ONE * radius, 0.45)
+	tween.tween_property(mat, "albedo_color:a", 0.0, 0.45)
+	tween.chain().tween_callback(ring.queue_free)
+
+
+# --- Inventario, oro, equipo y misiones ------------------------------------
+
+func total_atk() -> int:
+	return atk + forge * 4 + (4 if skills.has("fuerza1") else 0)
+
+
+func add_item(id: String, count := 1) -> void:
+	items[id] = int(items.get(id, 0)) + count
+	if items[id] <= 0:
+		items.erase(id)
+	stats_changed.emit()
+
+
+func item_count(id: String) -> int:
+	return int(items.get(id, 0))
+
+
+func add_gold(amount: int) -> void:
+	gold += amount
+	stats_changed.emit()
+
+
+func use_potion(kind: String) -> void:
+	if item_count(kind) <= 0 or not is_alive():
+		return
+	if kind == "pocion":
+		if hp >= max_hp:
+			return
+		hp = mini(max_hp, hp + 60)
+		Fx.number(get_parent(), global_position + Vector3(0, 2.2, 0), "+60", Color(0.4, 1.0, 0.6), 52)
+	else:
+		if mp >= max_mp:
+			return
+		mp = minf(max_mp, mp + 40)
+		Fx.number(get_parent(), global_position + Vector3(0, 2.2, 0), "+40 MP", Color(0.5, 0.7, 1.0), 48)
+	add_item(kind, -1)
+
+
+## Aprende una habilidad del árbol si hay puntos y se cumple el requisito.
+func learn_skill(id: String) -> bool:
+	if skills.has(id) or skill_points <= 0:
+		return false
+	for sk in Rpg.SKILLS:
+		if sk[0] == id:
+			if sk[3] != "" and not skills.has(sk[3]):
+				return false
+			skills[id] = true
+			skill_points -= 1
+			_apply_skill(id)
+			stats_changed.emit()
+			return true
+	return false
+
+
+func _apply_skill(id: String) -> void:
+	match id:
+		"vida1":
+			max_hp += 25
+			hp += 25
+		"vida2":
+			max_hp += 40
+			hp += 40
+		"mana1":
+			max_mp += 20
+			mp += 20
+
+
+## Avisa a las misiones activas de un enemigo derrotado.
+func on_enemy_killed(kind: String) -> void:
+	for id in quests:
+		var q := Rpg.quest(id)
+		if q.type == "kill" and (q.target == kind or (q.target == "any" and kind != "boss")):
+			quests[id] = mini(int(q.count), int(quests[id]) + 1)
+	stats_changed.emit()
+
+
+func quest_progress(id: String) -> int:
+	var q := Rpg.quest(id)
+	if q.type == "gather":
+		return mini(item_count(q.target), int(q.count))
+	return int(quests.get(id, 0))
+
+
+func quest_ready(id: String) -> bool:
+	return quest_progress(id) >= int(Rpg.quest(id).count)
 
 
 func _start_dodge() -> void:
@@ -579,7 +759,7 @@ func _start_dodge() -> void:
 	else:
 		_dodge_dir = -Vector3(sin(_model.rotation.y), 0, cos(_model.rotation.y))
 	_dodge_time = DODGE_TIME
-	_dodge_cooldown = DODGE_TIME + 0.25
+	_dodge_cooldown = DODGE_TIME + (0.1 if skills.has("esquiva") else 0.25)
 	# Elige la animación según hacia dónde rueda respecto a donde mira.
 	var fwd := Vector3(sin(_model.rotation.y), 0, cos(_model.rotation.y))
 	var right := fwd.cross(Vector3.UP)
@@ -652,9 +832,10 @@ func _regen(delta: float) -> void:
 		stats_changed.emit()
 
 
-func gain_exp(amount: int, where: Vector3) -> void:
+func gain_exp(amount: int, where: Vector3, from_kill := true) -> void:
 	exp_points += amount
-	kills += 1
+	if from_kill:
+		kills += 1
 	Fx.number(get_parent(), where, "+%d EXP" % amount, Color(0.55, 0.9, 1.0), 44)
 	while exp_points >= exp_to_next():
 		exp_points -= exp_to_next()
@@ -665,6 +846,7 @@ func gain_exp(amount: int, where: Vector3) -> void:
 		def += 2
 		hp = max_hp
 		mp = max_mp
+		skill_points += 1
 		leveled_up.emit(level)
 	stats_changed.emit()
 
