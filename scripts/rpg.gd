@@ -26,6 +26,16 @@ const QUESTS := [
 		"desc": "Derrota a 10 esqueletos para mantener seguros los caminos.", "gold": 150, "exp": 120, "gp": 60},
 	{"id": "q10", "rank": "C", "name": "El Rey Esqueleto", "type": "kill", "target": "boss", "count": 1,
 		"desc": "Baja a la mazmorra del este y derrota al Rey Esqueleto.", "gold": 500, "exp": 400, "gp": 200},
+	{"id": "q11", "rank": "C", "name": "Limpieza de las ruinas", "type": "kill", "target": "any", "count": 20,
+		"desc": "Derrota a 20 enemigos cualesquiera.", "gold": 300, "exp": 300, "gp": 120},
+	{"id": "q12", "rank": "B", "name": "El guardián del bosque", "type": "kill", "target": "musgoso", "count": 1,
+		"desc": "Derrota a Gorran, guardián del primer sello.", "gold": 600, "exp": 500, "gp": 220},
+	{"id": "q13", "rank": "B", "name": "La Hechicera del Lago", "type": "kill", "target": "lyra", "count": 1,
+		"desc": "Derrota a Lyra en las Ruinas del Lago.", "gold": 700, "exp": 600, "gp": 250},
+	{"id": "q14", "rank": "A", "name": "El caballero de la torre", "type": "kill", "target": "garrett", "count": 1,
+		"desc": "Derrota a Garrett en la Torre del Norte.", "gold": 900, "exp": 800, "gp": 300},
+	{"id": "q15", "rank": "A", "name": "Cazador legendario", "type": "kill", "target": "any", "count": 50,
+		"desc": "Derrota a 50 enemigos cualesquiera.", "gold": 1200, "exp": 1000, "gp": 400},
 ]
 
 const ITEMS := {
@@ -35,6 +45,9 @@ const ITEMS := {
 	"hongo": {"name": "Hongo lunar", "desc": "Material. Brilla en el bosque."},
 	"hueso": {"name": "Hueso", "desc": "Material. Lo sueltan los esqueletos."},
 	"fragmento": {"name": "Fragmento del Sistema", "desc": "Objeto de la historia. Late como un corazón."},
+	"sello_bosque": {"name": "Sello del Bosque", "desc": "Objeto de la historia. Huele a musgo y a lluvia."},
+	"sello_lago": {"name": "Sello del Lago", "desc": "Objeto de la historia. Siempre está frío y húmedo."},
+	"sello_torre": {"name": "Sello de la Torre", "desc": "Objeto de la historia. Lleva grabado el escudo de Garrett."},
 }
 
 ## Tienda de Pip: objetos y armaduras.

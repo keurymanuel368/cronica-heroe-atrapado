@@ -64,10 +64,49 @@ const KINDS := {
 		"weapon": "",
 		"shield": "",
 		"height": 3.6,
-		"hp": 1900, "atk": 28, "def": 7, "exp": 1500,
-		"speed": 4.6, "attack": "2H_Melee_Attack_Slice", "attack_speed": 0.9,
-		"poise": true, "level": 15, "boss": true, "final": true, "respawn": false, "range": 3.4, "sight": 40.0,
+		"hp": 2800, "atk": 36, "def": 9, "exp": 2000,
+		"speed": 4.8, "attack": "2H_Melee_Attack_Slice", "attack_speed": 0.9,
+		"poise": true, "level": 18, "boss": true, "final": true, "respawn": false, "range": 3.4, "sight": 40.0,
 		"tint": Color(0.5, 0.36, 0.7),
+	},
+	"musgoso": {
+		"name": "Gorran, el Guardián Musgoso",
+		"model": "res://assets/kaykit/characters/Barbarian.glb",
+		"body": "Barbarian",
+		"gear_keep": ["2H_Axe"],
+		"weapon": "",
+		"shield": "",
+		"height": 3.9,
+		"hp": 1150, "atk": 27, "def": 6, "exp": 550,
+		"speed": 3.8, "attack": "2H_Melee_Attack_Chop", "attack_speed": 0.8,
+		"poise": true, "level": 8, "boss": true, "respawn": false, "range": 3.5, "sight": 24.0,
+		"tint": Color(0.55, 0.8, 0.42), "special": "quake",
+	},
+	"lyra": {
+		"name": "Lyra, la Hechicera del Lago",
+		"model": "res://assets/kaykit/characters/Mage.glb",
+		"body": "Mage",
+		"gear_keep": ["2H_Staff"],
+		"weapon": "",
+		"shield": "",
+		"height": 3.2,
+		"hp": 1350, "atk": 30, "def": 5, "exp": 750,
+		"speed": 3.6, "attack": "Spellcast_Shoot", "attack_speed": 1.0,
+		"poise": true, "level": 11, "boss": true, "respawn": false, "ranged": true, "range": 12.0, "sight": 26.0,
+		"tint": Color(0.5, 0.72, 1.0), "special": "tide",
+	},
+	"garrett": {
+		"name": "Garrett, el Caballero Caído",
+		"model": "res://assets/kaykit/characters/Knight.glb",
+		"body": "Knight",
+		"gear_keep": ["1H_Sword", "Spike_Shield"],
+		"weapon": "",
+		"shield": "",
+		"height": 3.6,
+		"hp": 1750, "atk": 34, "def": 9, "exp": 1000,
+		"speed": 4.4, "attack": "1H_Melee_Attack_Slice_Diagonal", "attack_speed": 1.0,
+		"poise": true, "level": 13, "boss": true, "respawn": false, "range": 3.2, "sight": 26.0,
+		"tint": Color(0.78, 0.36, 0.34), "special": "charge",
 	},
 }
 
@@ -87,6 +126,8 @@ var _special_timer := 6.0
 ## Número para el cooperativo (igual en todos los ordenadores).
 var net_id := -1
 var _roared := false
+## Multiplicador de fuerza (enemigos de zonas avanzadas).
+var boost := 1.0
 const FAR_DISTANCE := 75.0
 var _far := false
 var _far_acc := 0.0
@@ -120,6 +161,14 @@ var _base_y := 0.0
 
 func _ready() -> void:
 	data = KINDS[kind]
+	if boost != 1.0:
+		# Versión más fuerte del mismo enemigo para zonas avanzadas.
+		data = data.duplicate()
+		data.hp = int(data.hp * boost)
+		data.atk = int(data.atk * (1.0 + (boost - 1.0) * 0.6))
+		data.def = int(data.def + boost * 2.0)
+		data.exp = int(data.exp * boost * 1.3)
+		data.level = int(data.level + boost * 3.0)
 	add_to_group("enemies")
 	max_hp = data.hp
 	hp = max_hp
@@ -139,7 +188,7 @@ func _ready() -> void:
 	if data.has("gear_keep"):
 		for child in _model.find_children("*", "MeshInstance3D", true, false):
 			var n := String(child.name)
-			if not (n.begins_with("Knight") or n in data.gear_keep):
+			if not (n.begins_with(data.get("body", "Knight")) or n in data.gear_keep):
 				child.visible = false
 	ModelUtil.fit_height(_model, data.height)
 	# Los modelos de KayKit ya tienen los pies en el origen.
@@ -346,6 +395,8 @@ func _physics_process(delta: float) -> void:
 		State.CHASE:
 			if data.get("final", false):
 				_final_specials(player, delta)
+			elif data.has("special"):
+				_boss_specials(player, delta)
 			if dist > GIVE_UP or global_position.distance_to(home) > 45.0 or not player.is_alive():
 				_state = State.PATROL
 				_patrol_target = home
@@ -472,6 +523,59 @@ func _final_specials(player: Node3D, delta: float) -> void:
 			e.title = "Guardián del vacío"
 			var a := TAU * i / 3.0
 			e.home = global_position + Vector3(cos(a) * 5.0, 0, sin(a) * 5.0)
+			e.position = e.home + Vector3(0, 0.5, 0)
+			get_parent().add_child(e)
+
+
+## Ataques especiales de los jefes de los sellos.
+func _boss_specials(player: Node3D, delta: float) -> void:
+	_special_timer -= delta
+	var angry := hp < max_hp / 2
+	if _special_timer <= 0.0 and player:
+		_special_timer = randf_range(4.0, 6.0) if angry else randf_range(6.0, 8.0)
+		match data.special:
+			"quake":
+				# Golpe al suelo: anillo de rocas mágicas a ras de suelo.
+				_anim.play("2H_Melee_Attack_Chop", 0.1)
+				var count := 12 if angry else 8
+				for i in count:
+					var a := TAU * i / count
+					_orb(global_position + Vector3(0, 0.6, 0), Vector3(cos(a), 0, sin(a)) * 8.0, int(data.atk * 0.6))
+				_sfx("explosion", -4.0)
+			"tide":
+				# Espiral de orbes de agua y un salto a otro punto de las ruinas.
+				_anim.play("Spellcast_Shoot", 0.1)
+				var turns := 3 if angry else 2
+				for i in 6 * turns:
+					var a := TAU * i / 6.0 + i * 0.15
+					_orb(global_position + Vector3(0, 1.8, 0), Vector3(cos(a), 0, sin(a)) * (7.0 + i * 0.4), int(data.atk * 0.55))
+				var jump := home + Vector3(randf_range(-7, 7), 0, randf_range(-7, 7))
+				Fx.number(get_parent(), global_position + Vector3(0, data.height, 0), "¡Marea!", Color(0.5, 0.8, 1.0), 48)
+				global_position = Vector3(jump.x, global_position.y, jump.z)
+			"charge":
+				# Embestida con el escudo hacia el héroe.
+				var d := player.global_position - global_position
+				d.y = 0
+				if d.length() > 3.0:
+					var lunge := d.normalized() * minf(d.length() - 2.4, 9.0)
+					create_tween().tween_property(self, "global_position", global_position + lunge, 0.25)
+					_anim.play("Dodge_Forward", 0.05)
+					Fx.number(get_parent(), global_position + Vector3(0, data.height, 0), "¡Embestida!", Color(1.0, 0.5, 0.4), 48)
+				if angry and player:
+					_orb(global_position + Vector3(0, 1.5, 0), (player.global_position - global_position).normalized() * 13.0, int(data.atk * 0.7))
+	var minions: Array = {"quake": ["minion", "minion"], "tide": ["mage", "rogue"], "charge": ["warrior", "warrior"]}[data.special]
+	if _summoned == 0 and hp < max_hp * 0.5:
+		_summoned = 1
+		Fx.number(get_parent(), global_position + Vector3(0, data.height + 1.0, 0), "¡A mí, mis siervos!", data.get("tint", tint), 52)
+		for i in minions.size():
+			var e := CharacterBody3D.new()
+			e.set_script(load("res://scripts/enemy.gd"))
+			e.kind = minions[i]
+			e.once = true
+			e.tint = data.get("tint", tint)
+			e.title = "Siervo del sello"
+			var a := TAU * i / minions.size()
+			e.home = global_position + Vector3(cos(a) * 4.0, 0, sin(a) * 4.0)
 			e.position = e.home + Vector3(0, 0.5, 0)
 			get_parent().add_child(e)
 

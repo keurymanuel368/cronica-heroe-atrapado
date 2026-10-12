@@ -29,6 +29,9 @@ CAST = {
     # se usa la masculina con el tono y el timbre subidos.
     "Hermana Elia": (MALE, 1.05, "rubberband=pitch=1.5,aecho=0.8:0.6:70|140:0.16|0.1"),
     "Sira": (MALE, 0.97, "rubberband=pitch=1.58"),
+    "Gorran": (MALE, 1.2, "rubberband=pitch=0.62,lowpass=f=2600,aecho=0.8:0.7:60|140:0.3|0.2,volume=1.5,alimiter=limit=0.9"),
+    "Lyra": (MALE, 1.08, "rubberband=pitch=1.52,chorus=0.5:0.9:40|55:0.3|0.25:0.3|0.5:2|2.5,aecho=0.8:0.8:180|340:0.3|0.2"),
+    "Garrett": (MALE, 1.05, "rubberband=pitch=0.8:formant=preserved,aecho=0.8:0.6:40|90:0.35|0.2,highpass=f=120"),
 }
 
 

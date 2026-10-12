@@ -11,6 +11,7 @@ const INTRO := [
 ]
 
 const KAITO_INTRO := [
+	"Rompiste mis tres sellos... Lyra y Garrett por fin descansan. Te lo agradezco.",
 	"Otro más... El Sistema nunca se cansa de traer héroes.",
 	"Yo también quise volver a casa. Junté los fragmentos y abrí esta puerta.",
 	"Pero solo hay una salida: vencer al guardián del Trono. Y ahora el guardián soy yo.",
@@ -36,12 +37,26 @@ const BOSS := [
 	"¡Esta vez tus huesos adornarán mi trono!",
 ]
 
+## Presentación de cada jefe: tipo de enemigo -> [voz, líneas].
+const BOSS_LINES := {
+	"boss": ["Rey Esqueleto", BOSS],
+	"musgoso": ["Gorran", ["Grrr... El bosque no olvida. Kaito me dejó aquí para guardar el sello.",
+		"¡Ningún héroe del cristal lo romperá!"]],
+	"lyra": ["Lyra", ["Cien años bajo el agua, esperando... ¿Vienes a liberarme, o a ocupar mi lugar?",
+		"Si quieres el sello, tendrás que vencer a la marea."]],
+	"garrett": ["Garrett", ["Juré proteger a Kaito y le fallé. No volveré a fallar.",
+		"¡En guardia, héroe! Este sello solo cae si yo caigo."]],
+}
+
 const CHAPTERS := {
 	1: "Capítulo uno. El despertar.",
 	2: "Capítulo dos. El Rey de Aurelia.",
 	3: "Capítulo tres. La mazmorra del Rey Esqueleto.",
-	4: "Capítulo cuatro. La verdad del Sistema.",
-	5: "Capítulo cinco. El Trono del Vacío.",
+	4: "Capítulo cuatro. Los tres sellos.",
+	5: "Capítulo cinco. La Hechicera del Lago.",
+	6: "Capítulo seis. La Torre del Norte.",
+	7: "Capítulo siete. La verdad del Sistema.",
+	8: "Capítulo ocho. El Trono del Vacío.",
 }
 
 ## Nombre en pantalla -> voz.

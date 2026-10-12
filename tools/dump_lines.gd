@@ -11,8 +11,9 @@ func _init() -> void:
 		out.append(["Narrador", t])
 	for t in data.KAITO_INTRO + data.KAITO_END:
 		out.append(["Kaito", t])
-	for t in data.BOSS:
-		out.append(["Rey Esqueleto", t])
+	for k in data.BOSS_LINES:
+		for t in data.BOSS_LINES[k][1]:
+			out.append([data.BOSS_LINES[k][0], t])
 	for s in story.STEPS:
 		if s.has("lines"):
 			for t in s.lines:

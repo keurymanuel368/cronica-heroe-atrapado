@@ -31,6 +31,14 @@ const FOREST := Vector2(-112, -32)
 const FOREST_RADIUS := 48.0
 ## Entrada de la mazmorra, en las colinas del este.
 const DUNGEON_GATE := Vector2(96, -8)
+## Lago del este y las ruinas de su orilla (capítulo 5).
+const LAKE := Vector2(112, -132)
+const LAKE_RADIUS := 20.0
+const RUINS := Vector2(90, -112)
+const RUINS_HEIGHT := 3.0
+## Torre del Norte, sobre una meseta (capítulo 6).
+const TOWER := Vector2(-78, -162)
+const TOWER_HEIGHT := 10.0
 
 ## Zonas con nombre: [nombre, centro, radio]. Fuera de todas, la pradera.
 const ZONES := [
@@ -41,6 +49,8 @@ const ZONES := [
 	["Molino del Oeste", Vector2(-58, -118), 24.0],
 	["Bosque Susurrante", Vector2(-112, -32), 52.0],
 	["Puerta de la Mazmorra", Vector2(96, -8), 18.0],
+	["Ruinas del Lago", Vector2(98, -120), 32.0],
+	["Torre del Norte", Vector2(-78, -162), 30.0],
 ]
 
 ## Gente del pueblo. `at` es relativo al centro de la aldea.
@@ -107,6 +117,8 @@ func build() -> void:
 	_build_arena()
 	_build_forest()
 	_build_gate()
+	_build_ruins()
+	_build_tower()
 	_build_signs()
 	_build_clouds()
 	_build_village_life()
@@ -177,6 +189,9 @@ func height(x: float, z: float) -> float:
 	h = _flatten(h, x, z, ARENA, _arena_height, ARENA_RADIUS + 2.0, ARENA_RADIUS + 12.0)
 	h = _flatten(h, x, z, CASTLE, CASTLE_HEIGHT, 38.0, 52.0)
 	h = _flatten(h, x, z, VILLAGE, VILLAGE_HEIGHT, 24.0, 40.0)
+	h = _flatten(h, x, z, LAKE, -2.6, LAKE_RADIUS * 0.6, LAKE_RADIUS)
+	h = _flatten(h, x, z, RUINS, RUINS_HEIGHT, 11.0, 19.0)
+	h = _flatten(h, x, z, TOWER, TOWER_HEIGHT, 17.0, 34.0)
 	return h
 
 
@@ -315,6 +330,8 @@ func _can_grow(x: float, z: float, h: float) -> bool:
 		return false
 	if Vector2(x, z).distance_to(CASTLE) < 40.0 or Vector2(x, z).distance_to(VILLAGE) < 22.0:
 		return false
+	if Vector2(x, z).distance_to(RUINS) < 13.0 or Vector2(x, z).distance_to(TOWER) < 18.0:
+		return false
 	return true
 
 
@@ -430,6 +447,8 @@ func _tree_ok(p: Vector2) -> bool:
 		return false
 	if p.distance_to(ARENA) < ARENA_RADIUS + 8.0 or p.distance_to(DUNGEON_GATE) < 14.0:
 		return false
+	if p.distance_to(RUINS) < 20.0 or p.distance_to(TOWER) < 26.0 or p.distance_to(LAKE) < LAKE_RADIUS + 4.0:
+		return false
 	if p.distance_to(AWAKENING) < 16.0 or p.distance_to(CASTLE) < 50.0 or p.distance_to(VILLAGE) < 30.0 or p.distance_to(WINDMILL) < 18.0:
 		return false
 	for t in _trees:
@@ -474,6 +493,8 @@ func _build_rocks() -> void:
 		var p := Vector2(_rng.randf_range(-140, 140), _rng.randf_range(-170, 60))
 		var h := height(p.x, p.y)
 		if h < 1.0 or road_distance(p.x, p.y) < 4.0 or p.distance_to(AWAKENING) < 12.0 or p.distance_to(ARENA) < ARENA_RADIUS + 6.0:
+			continue
+		if p.distance_to(RUINS) < 16.0 or p.distance_to(TOWER) < 22.0:
 			continue
 		var kind: String = ["rock_single_A", "rock_single_B", "rock_single_C", "rock_single_D", "rock_single_E"][_rng.randi() % 5]
 		var f := _rng.randf_range(5.0, 11.0)
@@ -1138,3 +1159,90 @@ func _add_fireflies(at: Vector3) -> void:
 	f.position = at + Vector3(0, 1.5, 0)
 	add_child(f)
 	_fireflies.append(f)
+
+
+# --- Ruinas del Lago y Torre del Norte (capítulos 5 y 6) ---------------------
+
+const DUNGEON_DIR := "res://assets/kaykit/dungeon/"
+const BUILDINGS_DIR := "res://assets/kaykit/buildings/"
+
+
+func _torch(pos: Vector3, color := Color(1.0, 0.6, 0.25)) -> void:
+	var light := OmniLight3D.new()
+	light.light_color = color
+	light.light_energy = 1.8
+	light.omni_range = 8.0
+	light.position = pos
+	add_child(light)
+
+
+## Templo hundido de Lyra: columnas rotas en círculo, muros agrietados y un
+## altar en el centro, a la orilla del lago.
+func _build_ruins() -> void:
+	var c := surface(RUINS.x, RUINS.y)
+	var stone := Color(0.78, 0.85, 0.95)
+	for i in 10:
+		var a := TAU * i / 10.0
+		var p := c + Vector3(cos(a), 0, sin(a)) * 10.5
+		if i % 3 == 1:
+			var rub := _place(DUNGEON_DIR + "rubble_large.glb", Vector3(p.x, height(p.x, p.z) - 0.1, p.z), 1.4, 0.02, stone)
+			rub.rotation.y = a
+			continue
+		var col := _place(DUNGEON_DIR + ("column.glb" if i % 2 == 0 else "pillar_decorated.glb"), Vector3(p.x, height(p.x, p.z) - 0.05, p.z), 1.5, 0.02, stone)
+		col.rotation.y = a
+		if i % 4 == 0:
+			col.scale.y = 0.55
+		_add_cylinder(Vector3(p.x, height(p.x, p.z) + 2.5, p.z), 0.7, 5.0)
+	for i in 4:
+		var a := TAU * (i + 0.5) / 4.0 + 0.3
+		var p := c + Vector3(cos(a), 0, sin(a)) * 14.0
+		var wall := _place(DUNGEON_DIR + ("wall_cracked.glb" if i % 2 == 0 else "wall_arched.glb"), Vector3(p.x, height(p.x, p.z) - 0.1, p.z), 1.4, 0.02, stone)
+		wall.rotation.y = -a + PI / 2.0
+		_add_box(Vector3(p.x, height(p.x, p.z) + 2.5, p.z), Vector3(5.5, 5.0, 1.2), -a + PI / 2.0)
+	for x in range(-2, 2):
+		for z in range(-2, 2):
+			var tile := _place(DUNGEON_DIR + "floor_tile_large.glb", c + Vector3(x * 2.8 + 1.4, 0.02, z * 2.8 + 1.4), 0.7, 0.0, stone)
+			tile.rotation.y = 0.0
+	var altar := _place(DUNGEON_DIR + "pillar_decorated.glb", c + Vector3(0, -1.6, 0), 1.2, 0.02, Color(0.6, 0.75, 1.0))
+	altar.scale.y = 0.5
+	_torch(c + Vector3(0, 2.2, 0), Color(0.45, 0.7, 1.0))
+	_torch(c + Vector3(7, 3.0, 7), Color(0.45, 0.7, 1.0))
+	_torch(c + Vector3(-7, 3.0, -7), Color(0.45, 0.7, 1.0))
+
+
+## Torre del Norte: patio amurallado con la torre de Garrett al fondo.
+func _build_tower() -> void:
+	var c := surface(TOWER.x, TOWER.y)
+	var dark := Color(0.62, 0.55, 0.6)
+	var tower := _place(BUILDINGS_DIR + "building_tower_B_blue.gltf", c + Vector3(0, 0, -11.0), 6.0, 0.03, dark)
+	tower.rotation.y = PI
+	_add_cylinder(c + Vector3(0, 6, -11.0), 4.2, 12.0)
+	# Muralla cuadrada de 24 m con la entrada al sur.
+	var half := 13.0
+	for side in 4:
+		for k in 5:
+			var t := -half + (k + 0.5) * (2.0 * half / 5.0)
+			if side == 0 and k == 2:
+				continue
+			var pos := Vector3.ZERO
+			var yaw := 0.0
+			match side:
+				0: pos = Vector3(t, 0, half)
+				1: pos = Vector3(t, 0, -half)
+				2:
+					pos = Vector3(half, 0, t)
+					yaw = PI / 2.0
+				3:
+					pos = Vector3(-half, 0, t)
+					yaw = PI / 2.0
+			var w := _place(DUNGEON_DIR + ("wall_cracked.glb" if (k + side) % 3 == 0 else "wall.glb"), c + pos - Vector3(0, 0.1, 0), 1.3, 0.02, dark)
+			w.rotation.y = yaw
+			_add_box(c + pos + Vector3(0, 2.4, 0), Vector3(5.4, 4.8, 1.1), yaw)
+	for side in [-1.0, 1.0]:
+		var p := c + Vector3(side * 3.4, 0, half + 0.6)
+		_place(DUNGEON_DIR + "pillar_decorated.glb", p - Vector3(0, 0.05, 0), 1.4, 0.02, dark)
+		_add_box(p + Vector3(0, 2.8, 0), Vector3(1.6, 5.6, 1.6))
+		var banner := _place(DUNGEON_DIR + "banner_patternA_red.glb", c + Vector3(side * 6.0, 2.0, -half + 0.8), 1.4, 0.02)
+		banner.rotation.y = 0.0
+		_torch(p + Vector3(0, 4.2, 1.0))
+	_torch(c + Vector3(0, 3.5, -6.0), Color(1.0, 0.35, 0.3))

@@ -335,15 +335,21 @@ func ending(kaito: Node3D, on_done: Callable) -> void:
 	play(shots, on_done, [kaito] if kaito else [])
 
 
-## El Rey Esqueleto despierta.
+## Un jefe se presenta (Rey Esqueleto y los guardianes de los sellos).
 func boss_intro(boss: Node3D) -> void:
+	if not Data.BOSS_LINES.has(boss.kind):
+		return
+	var voice: String = Data.BOSS_LINES[boss.kind][0]
+	var lines: Array = Data.BOSS_LINES[boss.kind][1]
+	var name_: String = boss.data.name
+	var h: float = float(boss.data.height)
 	var b := boss.global_position
 	var p: Vector3 = main._player.global_position
 	var dir := (p - b)
 	dir.y = 0
-	dir = dir.normalized()
-	var lines: Array = Data.BOSS
+	dir = dir.normalized() if dir.length() > 0.1 else Vector3(0, 0, 1)
+	var side := dir.cross(Vector3.UP)
 	play([
-		{"from": b + dir * 9.0 + Vector3(0, 1.0, 0), "to": b + dir * 5.5 + Vector3(0, 2.2, 0), "look": b + Vector3(0, 2.6, 0), "speaker": "Rey Esqueleto", "voice": "Rey Esqueleto", "text": lines[0], "time": 4.0, "fov": 45.0},
-		{"from": b + dir * 4.0 + dir.cross(Vector3.UP) * 2.0 + Vector3(0, 1.5, 0), "to": b + dir * 3.5 + Vector3(0, 2.5, 0), "look": b + Vector3(0, 2.4, 0), "speaker": "Rey Esqueleto", "voice": "Rey Esqueleto", "text": lines[1], "time": 3.0, "fov": 40.0, "actor": boss, "anim": "Cheer"},
+		{"from": b + dir * (h * 2.2) + Vector3(0, h * 0.25, 0), "to": b + dir * (h * 1.4) + Vector3(0, h * 0.55, 0), "look": b + Vector3(0, h * 0.62, 0), "speaker": name_, "voice": voice, "text": lines[0], "time": 4.0, "fov": 45.0},
+		{"from": b + dir * h + side * h * 0.5 + Vector3(0, h * 0.4, 0), "to": b + dir * h * 0.9 + Vector3(0, h * 0.6, 0), "look": b + Vector3(0, h * 0.6, 0), "speaker": name_, "voice": voice, "text": lines[1], "time": 3.0, "fov": 40.0, "actor": boss, "anim": "Cheer"},
 	], Callable(), [boss])

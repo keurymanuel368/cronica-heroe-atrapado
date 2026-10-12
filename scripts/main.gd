@@ -694,7 +694,8 @@ func _escort_arrived() -> void:
 
 
 func on_boss_defeated(boss: Node) -> void:
-	if boss.kind == "final":
+	if boss.kind != "boss":
+		_hud.show_system("¡Derrotaste a %s!\nEl sello se rompe con un estallido de luz." % boss.data.name, 6.0)
 		return
 	_boss_defeated = true
 	_hud.show_system("¡Derrotaste al Rey Esqueleto!\nEl Sistema registra tu hazaña. Una grieta de luz se abre en el cielo...", 7.0)

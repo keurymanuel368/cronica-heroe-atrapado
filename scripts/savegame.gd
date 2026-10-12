@@ -19,6 +19,7 @@ static func save(player: Node, clock: Node, position: Vector3, flags: Dictionary
 	cfg.set_value("heroe", "position", position)
 	for key in flags:
 		cfg.set_value("mundo", key, flags[key])
+	cfg.set_value("mundo", "story_v", 2)
 	cfg.set_value("mundo", "time", clock.time)
 	cfg.set_value("mundo", "day", clock.day)
 	cfg.save(PATH)
@@ -37,6 +38,10 @@ static func load_into(player: Node, clock: Node) -> bool:
 		return false
 	for key in SAVED:
 		player.set(key, cfg.get_value("heroe", key, player.get(key)))
+	# Partidas de antes de la versión 16: la historia ganó 10 pasos (los sellos)
+	# antes de "La verdad del Sistema".
+	if not cfg.has_section_key("mundo", "story_v") and int(player.story) >= 11:
+		player.story = int(player.story) + 10
 	player.mp = float(cfg.get_value("heroe", "mp", player.max_mp))
 	player.hp = maxi(1, player.hp)
 	player.set_weapon(cfg.get_value("heroe", "weapon", "espada"))

@@ -11,9 +11,14 @@ const CHAPTERS := {
 	1: "El despertar",
 	2: "El Rey de Aurelia",
 	3: "La mazmorra del Rey Esqueleto",
-	4: "La verdad del Sistema",
-	5: "El Trono del Vacío",
+	4: "Los tres sellos",
+	5: "La Hechicera del Lago",
+	6: "La Torre del Norte",
+	7: "La verdad del Sistema",
+	8: "El Trono del Vacío",
 }
+## Versión de la lista de pasos (para mover partidas guardadas antiguas).
+const STORY_VERSION := 2
 
 ## Pasos de la historia. kind: talk, guild, kill, kill_zone, item, level,
 ## boss, story_kill, crystal, final, end.
@@ -48,15 +53,40 @@ const STEPS := [
 			"Pero hay algo que nunca conté a nadie. Kaito no desapareció.",
 			"Sira, la archivista del gremio, guarda su diario. Ella sabrá qué significan estos fragmentos."]},
 	{"ch": 4, "kind": "talk", "npc": "Sira", "goal": "Habla con Sira, la archivista del gremio",
-		"lines": ["El diario de Kaito... Lo he leído mil veces.",
+		"lines": ["¿El Rey te envía? Entonces ya es hora de que alguien lea esto contigo.",
+			"Es el diario de Kaito. Habla de tres sellos que él mismo puso para cerrar el corazón del Sistema.",
+			"Mientras los sellos sigan en pie, los fragmentos no sirven de nada. Y cada sello tiene un guardián.",
+			"El primero está en el Bosque Susurrante. Kaito escribió que lo vigila una bestia cubierta de musgo."]},
+	{"ch": 4, "kind": "seal", "boss": "musgoso", "item": "sello_bosque", "goal": "Derrota al Guardián Musgoso en el corazón del bosque"},
+	{"ch": 4, "kind": "talk", "npc": "Abuelo Ered", "goal": "Cuéntale al Abuelo Ered lo que pasó en el bosque",
+		"lines": ["¿Gorran, el Guardián Musgoso? ¡Lo derrotaste! Mi abuelo contaba historias sobre él.",
+			"Kaito no viajaba solo. Lo acompañaban Lyra, una hechicera del lago, y Garrett, un caballero del reino.",
+			"Cuando Kaito desapareció, ellos también se perdieron. Dicen que el Sistema los ató a los sellos.",
+			"Las ruinas del lago, al este del pueblo... allí vivía Lyra. Ten cuidado, héroe."]},
+	{"ch": 5, "kind": "story_kill", "spawn": "ruins", "count": 6, "goal": "Limpia las Ruinas del Lago de espectros"},
+	{"ch": 5, "kind": "seal", "boss": "lyra", "item": "sello_lago", "goal": "Derrota a Lyra, la Hechicera del Lago"},
+	{"ch": 5, "kind": "talk", "npc": "Hermana Elia", "goal": "Habla con la Hermana Elia en la iglesia",
+		"lines": ["Siento el agua más tranquila... Lyra por fin descansa.",
+			"Anoche su alma me habló en sueños. Dijo: Garrett sigue en la torre. No dejéis que lo consuma.",
+			"La Torre del Norte está en la meseta, pasado el molino. Es el último sello.",
+			"Garrett era el más fuerte de los tres. Prepárate bien antes de ir."]},
+	{"ch": 6, "kind": "level", "count": 9, "goal": "Prepárate para la torre: llega al nivel 9"},
+	{"ch": 6, "kind": "story_kill", "spawn": "tower", "count": 5, "goal": "Abre paso entre los guardias de la Torre del Norte"},
+	{"ch": 6, "kind": "seal", "boss": "garrett", "item": "sello_torre", "goal": "Derrota a Garrett, el Caballero Caído"},
+	{"ch": 6, "kind": "talk", "npc": "Rey Aurelio", "goal": "Vuelve al castillo con el Rey Aurelio",
+		"lines": ["Garrett... era mi bisabuelo. La familia siempre dijo que murió como un héroe.",
+			"Ahora sé que pasó cien años atado a esa torre, protegiendo un secreto.",
+			"Los tres sellos han caído. Ve con Sira: ella sabrá qué hacer con los fragmentos."]},
+	{"ch": 7, "kind": "talk", "npc": "Sira", "goal": "Habla con Sira, la archivista del gremio",
+		"lines": ["Sin los sellos, el diario por fin se puede leer entero.",
 			"Kaito juntó los fragmentos para abrir la puerta de vuelta a su mundo. Pero la puerta no lleva a casa.",
 			"Lleva al Trono del Vacío, el corazón del Sistema. Allí el Sistema lo atrapó y lo convirtió en su guardián.",
 			"Él es quien despierta a los esqueletos. Y él te trajo aquí, para que alguien por fin lo libere.",
 			"Cuidado: sus guardianes ya vienen a por ti. Los he visto rondar la arena."]},
-	{"ch": 4, "kind": "story_kill", "count": 4, "goal": "Derrota a los guardianes del vacío en la arena"},
-	{"ch": 4, "kind": "crystal", "goal": "Toca el Cristal del despertar con los dos fragmentos"},
-	{"ch": 5, "kind": "final", "goal": "Derrota a Kaito, el Primer Héroe, en el Trono del Vacío"},
-	{"ch": 5, "kind": "end", "goal": "Historia completada. ¡Explora Aurelia libremente!"},
+	{"ch": 7, "kind": "story_kill", "count": 4, "goal": "Derrota a los guardianes del vacío en la arena"},
+	{"ch": 7, "kind": "crystal", "goal": "Toca el Cristal del despertar con los dos fragmentos"},
+	{"ch": 8, "kind": "final", "goal": "Derrota a Kaito, el Primer Héroe, en el Trono del Vacío"},
+	{"ch": 8, "kind": "end", "goal": "Historia completada. ¡Explora Aurelia libremente!"},
 ]
 
 const FINAL_ARENA := Vector3(0, -400, 400)
@@ -68,7 +98,9 @@ var world: Node
 var interiors: Node
 var _beacon: MeshInstance3D
 var _fragment: Node3D
-var _guardians_spawned := false
+var _guardians_spawned := {}
+var _seal_boss: Node3D
+const SEAL_PLACES := {"musgoso": Vector2(-112, -32), "lyra": Vector2(90, -112), "garrett": Vector2(-78, -168)}
 var _arena_built := false
 var final_boss: Node3D
 var in_final := false
@@ -148,6 +180,11 @@ func on_story_kill(enemy: Node) -> void:
 		"story_kill":
 			if enemy.has_meta("story"):
 				_count_up(s)
+		"seal":
+			if enemy.kind == s.boss:
+				player.add_item(s.item, 1)
+				Fx.number(player.get_parent(), player.global_position + Vector3(0, 2.4, 0), "¡Sello roto!", Color(1.0, 0.85, 0.4), 60)
+				advance()
 
 
 func on_boss_defeated(boss: Node) -> void:
@@ -188,7 +225,9 @@ func _enter_step(announce: bool) -> void:
 		"item":
 			_spawn_fragment()
 		"story_kill":
-			_spawn_guardians()
+			_spawn_guardians(s.get("spawn", "arena"))
+		"seal":
+			_spawn_seal_boss(s.boss)
 		"boss":
 			if main.boss_is_defeated():
 				player.add_item("fragmento", 1)
@@ -249,7 +288,13 @@ func objective_position():
 		"boss":
 			return world.surface(world.DUNGEON_GATE.x, world.DUNGEON_GATE.y)
 		"story_kill":
-			return world.surface(world.ARENA.x, world.ARENA.y)
+			var at: Vector2 = _spawn_center(s.get("spawn", "arena"))
+			return world.surface(at.x, at.y)
+		"seal":
+			if _seal_boss and is_instance_valid(_seal_boss) and _seal_boss.is_alive():
+				return _seal_boss.global_position
+			var c: Vector2 = SEAL_PLACES[s.boss]
+			return world.surface(c.x, c.y)
 		"crystal", "final":
 			return world.awakening_point()
 	return null
@@ -298,20 +343,49 @@ func _spawn_fragment() -> void:
 	_fragment.global_position = world.surface(world.FOREST.x + 4.0, world.FOREST.y + 4.0)
 
 
-func _spawn_guardians() -> void:
-	if _guardians_spawned:
+func _spawn_center(where: String) -> Vector2:
+	match where:
+		"ruins":
+			return world.RUINS
+		"tower":
+			return world.TOWER + Vector2(0, 4)
+	return world.ARENA
+
+
+## Jefe del sello: aparece en su sitio (bosque, ruinas o torre).
+func _spawn_seal_boss(kind: String) -> void:
+	if _seal_boss and is_instance_valid(_seal_boss) and _seal_boss.kind == kind and _seal_boss.is_alive():
 		return
-	_guardians_spawned = true
-	var kinds := ["warrior", "mage", "warrior", "mage"]
+	var c: Vector2 = SEAL_PLACES[kind]
+	_seal_boss = CharacterBody3D.new()
+	_seal_boss.set_script(ENEMY)
+	_seal_boss.kind = kind
+	_seal_boss.once = true
+	_seal_boss.home = world.surface(c.x, c.y)
+	_seal_boss.position = _seal_boss.home + Vector3(0, 0.5, 0)
+	main.add_child(_seal_boss)
+
+
+func _spawn_guardians(where := "arena") -> void:
+	if _guardians_spawned.has(where):
+		return
+	_guardians_spawned[where] = true
+	var kinds: Array = {"arena": ["warrior", "mage", "warrior", "mage"],
+		"ruins": ["mage", "rogue", "mage", "rogue", "minion", "mage"],
+		"tower": ["warrior", "warrior", "rogue", "warrior", "mage"]}[where]
+	var tints := {"arena": Color(0.6, 0.4, 0.9), "ruins": Color(0.5, 0.75, 1.0), "tower": Color(0.8, 0.4, 0.38)}
+	var titles := {"arena": "Guardián del vacío", "ruins": "Espectro del lago", "tower": "Guardia de la torre"}
+	var center := _spawn_center(where)
 	for i in kinds.size():
 		var a := TAU * i / kinds.size()
-		var p: Vector2 = world.ARENA + Vector2(cos(a), sin(a)) * 6.0
+		var p: Vector2 = center + Vector2(cos(a), sin(a)) * 6.0
 		var e := CharacterBody3D.new()
 		e.set_script(ENEMY)
 		e.kind = kinds[i]
 		e.once = true
-		e.tint = Color(0.6, 0.4, 0.9)
-		e.title = "Guardián del vacío"
+		e.tint = tints[where]
+		e.title = titles[where]
+		e.boost = {"arena": 2.4, "ruins": 2.0, "tower": 2.8}[where]
 		e.set_meta("story", true)
 		e.home = world.surface(p.x, p.y)
 		e.position = e.home + Vector3(0, 0.5, 0)
