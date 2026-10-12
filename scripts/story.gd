@@ -180,6 +180,8 @@ func _enter_step(announce: bool) -> void:
 		_last_ch = s.ch
 		if announce or int(player.story) == 0:
 			hud.show_chapter("Capítulo %d" % s.ch, CHAPTERS[s.ch])
+			if main.cinematic():
+				main.cinematic().chapter_voice.call_deferred(s.ch)
 	if announce:
 		hud.show_system("Nuevo objetivo:\n" + s.goal, 4.0)
 	match s.kind:
@@ -478,11 +480,7 @@ func _enter_final() -> void:
 		final_boss.home = FINAL_ARENA + Vector3(0, 0, -10)
 		final_boss.position = final_boss.home + Vector3(0, 0.5, 0)
 		main.add_child(final_boss)
-		hud.show_dialog("Kaito · El Primer Héroe", [
-			"Otro más... El Sistema nunca se cansa de traer héroes.",
-			"Yo también quise volver a casa. Junté los fragmentos y abrí esta puerta.",
-			"Pero solo hay una salida: vencer al guardián del Trono. Y ahora el guardián soy yo.",
-			"¡Muéstrame si eres más fuerte que yo hace cien años!"])
+		main.cinematic().kaito_intro.call_deferred(final_boss, Callable())
 	elif not final_boss.is_alive():
 		pass
 
@@ -499,12 +497,8 @@ func _leave_final() -> void:
 func _ending() -> void:
 	advance()
 	await get_tree().create_timer(2.5).timeout
-	hud.show_dialog("Kaito · El Primer Héroe", [
-		"Así que... esto es perder. Qué ligero me siento.",
-		"Cien años encerrado en este trono. Gracias por liberarme, héroe.",
-		"Escucha: el Sistema no es tu enemigo. Solo busca a alguien digno de proteger este mundo.",
-		"La puerta a tu mundo está abierta. Tú decides si cruzarla... o quedarte en Aurelia.",
-		"Adiós, amigo. Cuida de ellos por mí."], func(): hud.show_ending())
+	main.audio().force_music("fin")
+	main.cinematic().ending(final_boss, func(): hud.show_ending())
 
 
 ## En un invitado: el anfitrión venció a Kaito y todos ven el final.

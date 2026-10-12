@@ -3,6 +3,7 @@ extends CanvasLayer
 ## herrería, árbol de habilidades e inventario.
 
 const Rpg := preload("res://scripts/rpg.gd")
+const Settings := preload("res://scripts/settings.gd")
 
 const GOLD := Color(0.91, 0.76, 0.42)
 const RUNE := Color(1.0, 0.86, 0.55)
@@ -16,6 +17,8 @@ var _title: Label
 var _info: Label
 var _list: VBoxContainer
 var _current := ""
+## Desde dónde se abrieron los ajustes ("pause" o "title").
+var settings_back := "pause"
 var _system_style: StyleBoxFlat
 var _wood_style: StyleBoxFlat
 
@@ -81,6 +84,12 @@ func _ready() -> void:
 	add_child(_panel)
 
 
+func _sfx(name_: String, volume_db := 0.0) -> void:
+	var audio := get_tree().get_first_node_in_group("audio")
+	if audio:
+		audio.ui(name_, volume_db)
+
+
 func is_open() -> bool:
 	return _panel.visible
 
@@ -100,6 +109,7 @@ func _button(text: String, enabled := true) -> Button:
 	b.text = text
 	b.disabled = not enabled
 	b.add_theme_font_size_override("font_size", 16)
+	b.pressed.connect(_sfx.bind("ui_click"))
 	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
 		var sb := StyleBoxFlat.new()
 		sb.bg_color = Color(0.36, 0.22, 0.11, 0.95) if state != "disabled" else Color(0.24, 0.17, 0.12, 0.8)
@@ -149,17 +159,27 @@ func open(kind: String) -> void:
 	_panel.add_theme_stylebox_override("panel", _wood_style)
 	_title.add_theme_color_override("font_color", Color(1.0, 0.9, 0.65))
 	refresh()
+	if not _panel.visible:
+		_sfx("ui_open")
 	_panel.visible = true
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func close_menu() -> void:
+	if _panel.visible:
+		_sfx("ui_close")
+	var was := _current
 	_panel.visible = false
 	_current = ""
+	if was == "settings" and settings_back == "title":
+		settings_back = "pause"
+		return
 	get_tree().paused = false
-	if main:
+	if main and was != "pause" and was != "settings":
 		main.save_game()
+	if main and not main._touch and was == "pause":
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func refresh() -> void:
@@ -176,6 +196,10 @@ func refresh() -> void:
 			_skills()
 		"inventory":
 			_inventory()
+		"pause":
+			_pause()
+		"settings":
+			_settings()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -318,6 +342,7 @@ func _turn_in(id: String) -> void:
 		if new_rank != old_rank:
 			msg += "\n¡Ascendiste al rango %s del gremio!" % new_rank
 		main.hud_message(msg)
+		_sfx("quest")
 	refresh()
 
 
@@ -455,3 +480,110 @@ func _equip_element(e: String) -> void:
 	player.element = e
 	player.stats_changed.emit()
 	refresh()
+
+
+# --- Pausa y ajustes ---------------------------------------------------------
+
+func _big_button(text: String, on_press: Callable) -> void:
+	var b := _button(text)
+	b.custom_minimum_size = Vector2(0, 52)
+	b.add_theme_font_size_override("font_size", 21)
+	b.pressed.connect(on_press)
+	_list.add_child(b)
+
+
+func _pause() -> void:
+	_title.text = "PAUSA"
+	_info.text = main.story().chapter_title() if main and main.story() else ""
+	_big_button("Continuar", close_menu)
+	_big_button("Ajustes", func(): open("settings"))
+	_big_button("Ver controles", func():
+		main._help_panel.visible = true
+		close_menu())
+	_big_button("Guardar partida", func():
+		main.save_game()
+		_info.text = "Partida guardada.")
+	_big_button("Volver al título", func():
+		main.save_game()
+		close_menu()
+		main.back_to_title())
+	if not OS.has_feature("mobile"):
+		_big_button("Salir del juego", func():
+			main.save_game()
+			get_tree().quit())
+
+
+func _slider(text: String, key: String, lo: float, hi: float, suffix := "%") -> void:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 14)
+	var l := _label(text, 18)
+	l.custom_minimum_size.x = 250
+	h.add_child(l)
+	var s := HSlider.new()
+	s.min_value = lo
+	s.max_value = hi
+	s.step = 5
+	s.value = float(Settings.get_value(key))
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	s.custom_minimum_size.y = 32
+	var v := _label("%d%s" % [int(s.value), suffix], 18, GOLD)
+	v.custom_minimum_size.x = 70
+	s.value_changed.connect(func(x: float):
+		v.text = "%d%s" % [int(x), suffix]
+		Settings.set_value(key, int(x), main))
+	s.drag_ended.connect(func(_c: bool): _sfx("ui_click"))
+	h.add_child(s)
+	h.add_child(v)
+	_list.add_child(h)
+
+
+func _toggle(text: String, key: String) -> void:
+	var c := CheckButton.new()
+	c.text = text
+	c.button_pressed = bool(Settings.get_value(key))
+	c.add_theme_font_size_override("font_size", 18)
+	c.toggled.connect(func(on: bool):
+		_sfx("ui_click")
+		Settings.set_value(key, on, main)
+		if key == "ayuda" and main:
+			main._help_panel.visible = on)
+	_list.add_child(c)
+
+
+func _settings() -> void:
+	_title.text = "AJUSTES"
+	_info.text = "Los cambios se guardan solos."
+	_section("Sonido")
+	_slider("Volumen general", "general", 0, 100)
+	_slider("Música", "musica", 0, 100)
+	_slider("Efectos", "efectos", 0, 100)
+	_slider("Voces", "voces", 0, 100)
+	_section("Juego")
+	_slider("Sensibilidad de la cámara", "sensibilidad", 30, 200)
+	_toggle("Mostrar la ayuda de controles al jugar", "ayuda")
+	_section("Gráficos")
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 10)
+	var l := _label("Calidad", 18)
+	l.custom_minimum_size.x = 250
+	h.add_child(l)
+	for i in Settings.QUALITY.size():
+		var b := _button(Settings.QUALITY[i] + ("  ✓" if int(Settings.get_value("calidad")) == i else ""))
+		b.custom_minimum_size = Vector2(130, 40)
+		b.pressed.connect(func():
+			Settings.set_value("calidad", i, main)
+			refresh())
+		h.add_child(b)
+	_list.add_child(h)
+	var hint := _label("Baja: más fluido en celulares y PCs sencillos.  Alta: sombras finas y bordes suaves.", 14, DIM)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_list.add_child(hint)
+	if not OS.has_feature("mobile"):
+		_toggle("Pantalla completa (F11)", "pantalla_completa")
+	_list.add_child(HSeparator.new())
+	_big_button("Volver", func():
+		if settings_back == "title":
+			close_menu()
+		else:
+			open("pause"))

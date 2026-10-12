@@ -527,7 +527,12 @@ func _update_gate(delta: float) -> void:
 		return
 	var gate_pos := Vector3(CASTLE.x, player.global_position.y, CASTLE.y + 25.0)
 	var near := player.global_position.distance_to(gate_pos) < 14.0
+	var before := _gate_open
 	_gate_open = move_toward(_gate_open, 1.0 if near else 0.0, delta * 0.8)
+	if (before == 0.0 and _gate_open > 0.0) or (before == 1.0 and _gate_open < 1.0):
+		var audio := get_tree().get_first_node_in_group("audio")
+		if audio:
+			audio.at("gate", gate_pos + Vector3(0, 3, 0), 2.0)
 	var angle := smoothstep(0.0, 1.0, _gate_open) * deg_to_rad(100.0)
 	for door in castle_doors:
 		door.rotation.y = angle if String(door.name).ends_with("left") else -angle

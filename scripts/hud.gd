@@ -55,6 +55,7 @@ var _toast_time := 0.0
 var _status: PanelContainer
 var _status_label: Label
 var _picker: PanelContainer
+var _fader: ColorRect
 var _marker: Label3D
 
 
@@ -463,6 +464,33 @@ func _talk_next() -> void:
 	_line += 1
 
 
+## Fundido a negro: oscurece, hace el cambio (entrar, salir...) y aclara.
+func fade(mid: Callable, hold := 0.15) -> void:
+	if _fader == null:
+		_fader = ColorRect.new()
+		_fader.color = Color.BLACK
+		_fader.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_fader.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var layer := CanvasLayer.new()
+		layer.layer = 30
+		layer.process_mode = Node.PROCESS_MODE_ALWAYS
+		layer.add_child(_fader)
+		add_child(layer)
+	_fader.modulate.a = 0.0
+	var tw := _fader.create_tween()
+	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tw.tween_property(_fader, "modulate:a", 1.0, 0.25)
+	tw.tween_callback(mid)
+	tw.tween_interval(hold)
+	tw.tween_property(_fader, "modulate:a", 0.0, 0.4)
+
+
+func sfx(name_: String, volume_db := 0.0) -> void:
+	var audio := get_tree().get_first_node_in_group("audio")
+	if audio:
+		audio.ui(name_, volume_db)
+
+
 ## Diálogo de escena: un personaje habla aunque no haya nadie cerca (F avanza).
 func show_dialog(speaker: String, lines: Array, on_done: Callable = Callable()) -> void:
 	_talking = null
@@ -483,6 +511,7 @@ func _scene_next() -> void:
 		return
 	_dialog_name.text = _scene_name
 	_dialog_text.text = _scene_lines[_scene_index] + "\n\n(F para continuar)"
+	sfx("blip", -6.0)
 	_scene_index += 1
 
 
@@ -506,6 +535,7 @@ func show_chapter(top: String, title: String) -> void:
 	_chapter.add_child(a)
 	_chapter.add_child(b)
 	add_child(_chapter)
+	sfx("chapter")
 	var tw := _chapter.create_tween()
 	_chapter.modulate.a = 0.0
 	tw.tween_property(_chapter, "modulate:a", 1.0, 0.8)
@@ -539,6 +569,9 @@ func show_ending() -> void:
 	b.custom_minimum_size = Vector2(360, 54)
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	b.pressed.connect(func():
+		var audio := get_tree().get_first_node_in_group("audio")
+		if audio:
+			audio.force_music("")
 		_ending.queue_free()
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED)
 	v.add_child(b)
@@ -571,6 +604,19 @@ func _unhandled_input(event: InputEvent) -> void:
 					if not story_lines.is_empty():
 						_lines = story_lines
 						_story_talk = true
+				if _story_talk and main and main.cinematic():
+					# Conversación de historia: escena con cámara y voz.
+					var cine_npc := npc
+					var cine_lines := _lines
+					_talking = null
+					main.cinematic().talk(npc, npc.npc_name, cine_lines, func():
+						_talking = cine_npc
+						_lines = []
+						_line = 0
+						_story_talk = true
+						_talk_next())
+					get_viewport().set_input_as_handled()
+					return
 				_dialog.visible = true
 				if main:
 					main._help_panel.visible = false

@@ -23,7 +23,7 @@ const ACTION_BUTTONS := [
 ]
 ## Botones pequeños arriba al centro: [acción, texto]
 const MENU_BUTTONS := [
-	["map", "Mapa"], ["party", "Grupo"], ["status", "Estado"], ["inventory", "Inventario"],
+	["ui_cancel", "Menú"], ["map", "Mapa"], ["party", "Grupo"], ["status", "Estado"], ["inventory", "Inventario"],
 	["skills_menu", "Habilidades"], ["cycle_weapon", "Arma"], ["cycle_element", "Elemento"],
 	["save_game", "Guardar"],
 ]

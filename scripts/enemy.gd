@@ -86,6 +86,7 @@ var title := ""
 var _special_timer := 6.0
 ## Número para el cooperativo (igual en todos los ordenadores).
 var net_id := -1
+var _roared := false
 var _net: Node
 var _net_pos := Vector3.ZERO
 var _net_rot := 0.0
@@ -276,6 +277,12 @@ func _physics_process(delta: float) -> void:
 	if _net and _net.is_client():
 		_net_puppet(delta)
 		return
+	if not _roared and is_boss() and _state == State.CHASE:
+		_roared = true
+		_sfx("roar", 4.0)
+		var cine := get_tree().get_first_node_in_group("cinematic")
+		if cine and kind != "final" and global_position.distance_to(_player().global_position) < 30.0:
+			cine.boss_intro(self)
 	var player := _player()
 	var target_velocity := Vector3.ZERO
 	_cooldown = max(_cooldown - delta, 0.0)
@@ -364,6 +371,16 @@ func _range() -> float:
 	return float(data.get("range", ATTACK_RANGE))
 
 
+func _sfx(name_: String, volume_db := 0.0) -> void:
+	var audio := get_tree().get_first_node_in_group("audio")
+	if audio:
+		audio.at(name_, global_position + Vector3(0, 1, 0), volume_db)
+
+
+func is_chasing() -> bool:
+	return _state == State.CHASE or _state == State.ATTACK or _state == State.HIT
+
+
 func is_boss() -> bool:
 	return data.get("boss", false)
 
@@ -397,6 +414,7 @@ func _cast_orb(player: Node3D) -> void:
 	p.radius = 0.6
 	p.life = 2.5
 	p.source = self
+	_sfx("orb", -4.0)
 	if _net:
 		_net.enemy_orb(start, p.velocity, int(data.atk))
 
@@ -455,6 +473,7 @@ func _orb(start: Vector3, vel: Vector3, damage: int) -> void:
 	p.radius = 0.6
 	p.life = 3.0
 	p.source = self
+	_sfx("orb", -4.0)
 	if _net:
 		_net.enemy_orb(start, vel, damage)
 
@@ -484,12 +503,14 @@ func take_hit(damage: int, from: Vector3, stagger: bool, push: float) -> bool:
 	if _net and _net.is_client():
 		# El anfitrión aplica el daño; aquí solo se ve el golpe.
 		_net.send_enemy_hit(self, damage, from, stagger, push)
+		_sfx("hit_heavy" if stagger else "hit", -1.0)
 		Fx.number(get_parent(), global_position + Vector3(0, data.height + 0.2, 0), str(maxi(1, damage - int(data.def))), Color(1.0, 0.95, 0.6))
 		_model.scale = Vector3(1.15, 0.85, 1.15) * _base_scale
 		_model.create_tween().tween_property(_model, "scale", _base_scale, 0.15)
 		return false
 	var amount := maxi(1, int(damage * randf_range(0.9, 1.1)) - int(data.def))
 	hp -= amount
+	_sfx("hit_heavy" if stagger else "hit", -1.0)
 	# Se encoge un instante al recibir el golpe.
 	_model.scale = Vector3(1.15, 0.85, 1.15) * _base_scale
 	var tw := _model.create_tween()
@@ -521,6 +542,7 @@ func _update_bar() -> void:
 
 func _die() -> void:
 	_state = State.DEAD
+	_sfx("enemy_death")
 	_timer = RESPAWN_TIME if data.get("respawn", true) and not once else INF
 	_anim.play("Death_A", 0.05)
 	_set_bar_visible(false)

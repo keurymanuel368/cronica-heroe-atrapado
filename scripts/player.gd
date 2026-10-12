@@ -81,10 +81,14 @@ var _pivot: Node3D
 var _arm: SpringArm3D
 var _camera: Camera3D
 var _yaw := 0.0
+var _was_on_floor := true
+var _fall_speed := 0.0
+var _step_dist := 0.0
+var look_sensitivity := 1.0
 var _touch: bool = preload("res://scripts/platform.gd").is_touch()
 var _pitch := deg_to_rad(-14.0)
 var _zoom := 5.0
-var _was_on_floor := true
+var _floor_sfx := true
 var _locked_anim_time := 0.0
 var _jump_requested := false
 
@@ -275,11 +279,48 @@ func _build_camera() -> void:
 	_arm.add_child(_camera)
 
 
+## Sonido en la posición del héroe.
+func sfx(name_: String, volume_db := 0.0) -> void:
+	var audio := get_tree().get_first_node_in_group("audio")
+	if audio:
+		audio.at(name_, global_position + Vector3(0, 1, 0), volume_db)
+
+
+func ui_sfx(name_: String, volume_db := 0.0) -> void:
+	var audio := get_tree().get_first_node_in_group("audio")
+	if audio:
+		audio.ui(name_, volume_db)
+
+
+## Pasos (o cascos del caballo) según lo que se ha andado.
+func _footsteps(delta: float) -> void:
+	var was := _floor_sfx
+	_floor_sfx = is_on_floor()
+	if _floor_sfx and not was and _fall_speed < -6.0:
+		sfx("land", -4.0)
+	_fall_speed = velocity.y
+	if not is_on_floor() or _swimming:
+		return
+	var speed := Vector2(velocity.x, velocity.z).length()
+	if speed < 1.0:
+		return
+	_step_dist += speed * delta
+	var stride := 3.2 if horse else (2.4 if speed > 5.0 else 1.7)
+	if _step_dist >= stride:
+		_step_dist = 0.0
+		if horse:
+			sfx("hoof", -2.0)
+			return
+		var main_node := get_tree().get_first_node_in_group("main")
+		var hard: bool = main_node != null and (main_node.in_dungeon() or main_node.indoor_name() != "")
+		sfx("step_stone" if hard else "step_grass", -8.0 if speed < 5.0 else -5.0)
+
+
 ## Cámara con el dedo (pantalla táctil).
 func touch_look(rel: Vector2) -> void:
 	if target == null:
-		_yaw -= rel.x
-	_pitch = clamp(_pitch - rel.y, PITCH_MIN, PITCH_MAX)
+		_yaw -= rel.x * look_sensitivity
+	_pitch = clamp(_pitch - rel.y * look_sensitivity, PITCH_MIN, PITCH_MAX)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -296,13 +337,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			_zoom = clamp(_zoom + 0.5, ZOOM_MIN, ZOOM_MAX)
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		if target == null:
-			_yaw -= event.relative.x * MOUSE_SENSITIVITY
-		_pitch = clamp(_pitch - event.relative.y * MOUSE_SENSITIVITY, PITCH_MIN, PITCH_MAX)
+			_yaw -= event.relative.x * MOUSE_SENSITIVITY * look_sensitivity
+		_pitch = clamp(_pitch - event.relative.y * MOUSE_SENSITIVITY * look_sensitivity, PITCH_MIN, PITCH_MAX)
 		return
 	if not is_alive():
 		return
 	if event.is_action_pressed("ui_cancel"):
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		var main_node := get_tree().get_first_node_in_group("main")
+		if main_node:
+			main_node.open_menu("pause")
+		else:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif event.is_action_pressed("jump"):
 		_jump_requested = true
 	elif horse and (event.is_action_pressed("attack_light") or event.is_action_pressed("attack_heavy") or event.is_action_pressed("dodge")
@@ -439,10 +484,12 @@ func _physics_process(delta: float) -> void:
 		_coyote = 0.0
 		_locked_anim_time = 0.0
 		_play("Jump_Start", 0.05)
+		sfx("jump", -6.0)
 	_jump_requested = false
 
 	_step_up(delta)
 	move_and_slide()
+	_footsteps(delta)
 
 	var flat := Vector3(velocity.x, 0, velocity.z)
 	if (target and (_blocking or not _attack.is_empty() or flat.length() < 4.0)) and _dodge_time <= 0.0:
@@ -620,6 +667,8 @@ func _start_attack(heavy: bool) -> bool:
 	_locked_anim_time = 0.0
 	_anim.play(_attack.anim, 0.08, float(_attack.speed))
 	_anim.seek(0.0, true)
+	if not _attack.has("arrows"):
+		sfx("swing_heavy" if heavy else "swing", -3.0)
 	_since_combat = 0.0
 	# Gira hacia donde apunta la cámara o hacia el objetivo fijado.
 	var aim := _aim_direction()
@@ -741,6 +790,7 @@ func _cast_spell() -> void:
 	_attack_length = _anim.get_animation("Spellcast_Shoot").length / 1.3
 	_attack_hit_done = true
 	_anim.play("Spellcast_Shoot", 0.08, 1.3)
+	sfx("cast", -4.0)
 	var aim := _aim_direction()
 	_model.rotation.y = atan2(aim.x, aim.z)
 	_since_combat = 0.0
@@ -756,6 +806,7 @@ func _cast_spell() -> void:
 			var heal := 30 + level * 6
 			hp = mini(max_hp, hp + heal)
 			Fx.number(get_parent(), global_position + Vector3(0, 2.2, 0), "+%d" % heal, Color(0.4, 1.0, 0.6), 56)
+			ui_sfx("heal")
 			_burst(color, 2.5)
 			stats_changed.emit()
 		"viento":
@@ -837,6 +888,8 @@ func total_atk() -> int:
 
 func add_item(id: String, count := 1) -> void:
 	items[id] = int(items.get(id, 0)) + count
+	if count > 0 and is_inside_tree():
+		ui_sfx("pickup", -6.0)
 	if items[id] <= 0:
 		items.erase(id)
 	stats_changed.emit()
@@ -848,6 +901,8 @@ func item_count(id: String) -> int:
 
 func add_gold(amount: int) -> void:
 	gold += amount
+	if amount > 0:
+		ui_sfx("coin", -4.0)
 	stats_changed.emit()
 
 
@@ -858,11 +913,13 @@ func use_potion(kind: String) -> void:
 		if hp >= max_hp:
 			return
 		hp = mini(max_hp, hp + 60)
+		ui_sfx("potion")
 		Fx.number(get_parent(), global_position + Vector3(0, 2.2, 0), "+60", Color(0.4, 1.0, 0.6), 52)
 	else:
 		if mp >= max_mp:
 			return
 		mp = minf(max_mp, mp + 40)
+		ui_sfx("potion")
 		Fx.number(get_parent(), global_position + Vector3(0, 2.2, 0), "+40 MP", Color(0.5, 0.7, 1.0), 48)
 	add_item(kind, -1)
 
@@ -928,6 +985,7 @@ func _start_dodge() -> void:
 	else:
 		_dodge_dir = -Vector3(sin(_model.rotation.y), 0, cos(_model.rotation.y))
 	_dodge_time = DODGE_TIME
+	sfx("dodge", -4.0)
 	_dodge_cooldown = DODGE_TIME + (0.1 if skills.has("esquiva") else 0.25)
 	# Elige la animación según hacia dónde rueda respecto a donde mira.
 	var fwd := Vector3(sin(_model.rotation.y), 0, cos(_model.rotation.y))
@@ -963,12 +1021,14 @@ func take_hit(damage: int, from: Vector3, _attacker: Node3D = null) -> void:
 	if _blocking and away.length() > 0.01 and fwd.dot(-away.normalized()) > 0.2:
 		amount = maxi(0, int(round(amount * (1.0 - float(Weapons.DATA[weapon].block)))))
 		_anim.play("Block_Hit", 0.05)
+		sfx("block", -2.0)
 		velocity += away.normalized() * 3.0
 		Fx.number(get_parent(), global_position + Vector3(0, 2.1, 0), "Bloqueo" if amount == 0 else str(amount), Color(0.6, 0.85, 1.0), 48)
 	else:
 		_attack = {}
 		_hurt_time = 0.3
 		_anim.play("Hit_A", 0.05)
+		sfx("hurt", -3.0)
 		if away.length() > 0.01:
 			velocity += away.normalized() * 5.0
 		Fx.number(get_parent(), global_position + Vector3(0, 2.1, 0), str(amount), Color(1.0, 0.35, 0.3))
@@ -985,6 +1045,7 @@ func _die() -> void:
 	_invulnerable = 0.0
 	target = null
 	_anim.play("Death_A", 0.05)
+	ui_sfx("death")
 	_dead_time = 3.5
 	died.emit()
 
@@ -1028,6 +1089,7 @@ func gain_exp(amount: int, where: Vector3, from_kill := true) -> void:
 		hp = max_hp
 		mp = max_mp
 		skill_points += 1
+		ui_sfx("level_up")
 		leveled_up.emit(level)
 	stats_changed.emit()
 
@@ -1165,6 +1227,7 @@ func _use_special() -> void:
 			Fx.number(get_parent(), global_position + Vector3(0, 2.3, 0), "Recargando %.0f s" % ceilf(special_cd), Color(0.7, 0.8, 1.0), 36)
 		return
 	special_cd = float(Weapons.SPECIALS[weapon].cd)
+	sfx("special")
 	if skills.has("esquiva"):
 		special_cd *= 0.85
 	_since_combat = 0.0
@@ -1263,6 +1326,7 @@ func _awaken() -> void:
 		Fx.number(get_parent(), global_position + Vector3(0, 2.3, 0), "Poder %d%%" % int(power), Color(1.0, 0.8, 0.4), 36)
 		return
 	awakened = 12.0
+	ui_sfx("awaken")
 	_since_combat = 0.0
 	hp = mini(max_hp, hp + max_hp / 4)
 	stats_changed.emit()

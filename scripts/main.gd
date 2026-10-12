@@ -30,6 +30,10 @@ var _interiors: Node3D
 var _big_map: Control
 var _story: Node
 var _net: Node
+var _audio: Node
+var _cinematic: CanvasLayer
+var _title: CanvasLayer
+var _ui_layer: CanvasLayer
 var _touch: bool = preload("res://scripts/platform.gd").is_touch()
 ## Sala en la que está el héroe ({} si está fuera).
 var _inside: Dictionary = {}
@@ -38,12 +42,17 @@ var _menus: CanvasLayer
 var _escort: Node3D
 
 const SaveGame := preload("res://scripts/savegame.gd")
+const Settings := preload("res://scripts/settings.gd")
 const NPC_SCRIPT := preload("res://scripts/npc.gd")
 
 
 func _ready() -> void:
 	_rng.seed = 20261009
 	_setup_input()
+	_audio = preload("res://scripts/audio.gd").new()
+	_audio.name = "Audio"
+	_audio.main = self
+	add_child(_audio)
 	_net = preload("res://scripts/net.gd").new()
 	_net.name = "Net"
 	add_child(_net)
@@ -71,6 +80,7 @@ func _ready() -> void:
 		horse.coat_color = [Color(0.55, 0.34, 0.19), Color(0.92, 0.9, 0.86), Color(0.2, 0.16, 0.14), Color(0.72, 0.42, 0.2)][get_tree().get_nodes_in_group("horses").size() % 4]
 		add_child(horse)
 	add_to_group("boss_listeners")
+	add_to_group("main")
 	_clock = preload("res://scripts/daynight.gd").new()
 	_clock.sun = _sun
 	_clock.env = _env
@@ -108,6 +118,9 @@ func _ready() -> void:
 	_big_map.visible = "--map" in OS.get_cmdline_user_args()
 	_hud.add_child(_big_map)
 	_big_map.setup(_world, _player, self, minimap.texture())
+	_cinematic = preload("res://scripts/cinematic.gd").new()
+	_cinematic.main = self
+	add_child(_cinematic)
 	_menus = preload("res://scripts/menus.gd").new()
 	_menus.player = _player
 	_menus.main = self
@@ -148,9 +161,34 @@ func _ready() -> void:
 		var touch := preload("res://scripts/touch.gd").new()
 		touch.player = _player
 		add_child(touch)
-		# Calidad más ligera para celular y tablet.
-		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
-		RenderingServer.directional_shadow_atlas_set_size(2048, true)
+	else:
+		_help_panel.visible = bool(Settings.get_value("ayuda"))
+	Settings.apply(self)
+	_title = preload("res://scripts/title.gd").new()
+	_title.main = self
+	_title.visible = false
+	add_child(_title)
+	var args := Array(OS.get_cmdline_user_args()).filter(func(a): return a != "--touch")
+	if Engine.has_meta("intro") or "--intro" in args:
+		Engine.remove_meta("intro")
+		_cinematic.intro.call_deferred(Callable())
+	elif "--title" in args or (args.is_empty() and not Engine.has_meta("skip_title")):
+		_title.open.call_deferred()
+	if Engine.has_meta("skip_title"):
+		Engine.remove_meta("skip_title")
+
+
+## Borra la partida y empieza de cero con la escena de introducción.
+func start_new_game() -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveGame.PATH))
+	Engine.set_meta("intro", true)
+	get_tree().paused = false
+	get_tree().reload_current_scene()
+
+
+func back_to_title() -> void:
+	get_tree().paused = false
+	get_tree().reload_current_scene()
 
 
 # --- Controles -------------------------------------------------------------
@@ -217,7 +255,7 @@ func _bind(action: String, keys: Array, buttons: Array, axis: Array = [], mouse:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("fullscreen"):
 		var full := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
+		Settings.set_value("pantalla_completa", not full, self)
 	elif event.is_action_pressed("party"):
 		_net.toggle_panel()
 	elif event.is_action_pressed("map"):
@@ -492,24 +530,29 @@ func use_portal() -> void:
 		_player.dismount()
 		return
 	if _story and _story.portal_prompt() != "":
-		_story.use_portal()
+		_audio.ui("portal")
+		_hud.fade(_story.use_portal)
 		return
 	if not _inside.is_empty():
-		_exit_room()
+		_audio.ui("door", -3.0)
+		_hud.fade(_exit_room)
 		return
 	if not _in_dungeon:
 		var h := _near_horse()
 		if h:
 			_player.mount(h)
+			_player.sfx("hoof")
 			return
 		var room := _near_door()
 		if not room.is_empty():
-			_enter_room(room)
+			_audio.ui("door", -3.0)
+			_hud.fade(_enter_room.bind(room))
 			return
+	_audio.ui("portal")
 	if _in_dungeon:
-		_exit_dungeon()
+		_hud.fade(_exit_dungeon)
 	else:
-		_enter_dungeon()
+		_hud.fade(_enter_dungeon)
 
 
 func _enter_dungeon() -> void:
@@ -540,6 +583,29 @@ func open_menu(kind: String) -> void:
 
 func hud_message(text: String) -> void:
 	_hud.show_system(text, 5.0)
+
+
+func is_night() -> bool:
+	return _clock != null and _clock.is_night()
+
+
+func near_village() -> bool:
+	var p := Vector2(_player.global_position.x, _player.global_position.z)
+	return p.distance_to(_world.VILLAGE) < 42.0 or p.distance_to(_world.CASTLE) < 40.0
+
+
+## Muestra u oculta toda la interfaz de juego (para el título y las escenas).
+func set_ui_visible(on: bool) -> void:
+	_hud.visible = on
+	_ui_layer.visible = on
+
+
+func cinematic() -> CanvasLayer:
+	return _cinematic
+
+
+func audio() -> Node:
+	return _audio
 
 
 func in_dungeon() -> bool:
@@ -709,6 +775,7 @@ func _label(text: String, size: int, color := Color(0.91, 0.95, 1.0)) -> Label:
 func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
+	_ui_layer = layer
 	var gold := Color(0.91, 0.76, 0.42)
 	var rune := Color(1.0, 0.86, 0.55)
 
