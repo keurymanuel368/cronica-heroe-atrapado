@@ -135,13 +135,16 @@ var _check := 0.0
 ## Calidad 0/1/2: cuánto pasto se dibuja y hasta qué distancia; los objetos
 ## pequeños lejanos (árboles, rocas, vallas) dejan de dibujarse entre la niebla.
 func set_quality(q: int) -> void:
-	var share: float = [0.35, 0.65, 1.0][q]
-	var reach: float = [45.0, 65.0, 90.0][q]
+	# En el celular la calidad baja es todavía más ligera: menos pasto, se
+	# dibuja menos lejos y las luces de antorchas y farolas se apagan lejos.
+	var phone := OS.has_feature("mobile") and q == 0
+	var share: float = 0.15 if phone else [0.35, 0.65, 1.0][q]
+	var reach: float = 30.0 if phone else [45.0, 65.0, 90.0][q]
 	for mmi in _grass_chunks:
 		var mm: MultiMesh = mmi.multimesh
 		mm.visible_instance_count = int(mm.instance_count * share) if mm.instance_count > 300 else -1
 		mmi.visibility_range_end = reach
-	var far: float = [130.0, 160.0, 210.0][q]
+	var far: float = 85.0 if phone else [130.0, 160.0, 210.0][q]
 	for g in find_children("*", "GeometryInstance3D", true, false):
 		if g is MultiMeshInstance3D and g in _grass_chunks:
 			continue
@@ -153,8 +156,10 @@ func set_quality(q: int) -> void:
 			g.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF if q > 0 else GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	for l in find_children("*", "OmniLight3D", true, false):
 		l.distance_fade_enabled = true
-		l.distance_fade_begin = 35.0
-		l.distance_fade_length = 10.0
+		l.distance_fade_begin = 18.0 if phone else 35.0
+		l.distance_fade_length = 6.0 if phone else 10.0
+		if phone:
+			l.shadow_enabled = false
 
 
 func _process(delta: float) -> void:

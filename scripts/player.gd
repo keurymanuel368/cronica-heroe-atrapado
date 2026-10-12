@@ -274,6 +274,8 @@ func _build_camera() -> void:
 	_arm.add_excluded_object(get_rid())
 	_pivot.add_child(_arm)
 	_camera = Camera3D.new()
+	if OS.has_feature("mobile"):
+		_camera.far = 160.0
 	_camera.fov = 62.0
 	_camera.current = true
 	_arm.add_child(_camera)
