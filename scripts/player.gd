@@ -274,7 +274,7 @@ func _build_camera() -> void:
 	_arm.add_excluded_object(get_rid())
 	_pivot.add_child(_arm)
 	_camera = Camera3D.new()
-	if OS.has_feature("mobile"):
+	if preload("res://scripts/platform.gd").is_phone():
 		_camera.far = 160.0
 	_camera.fov = 62.0
 	_camera.current = true
@@ -1195,20 +1195,19 @@ func _make_aura(color: Color) -> void:
 	light.omni_range = 6.0
 	light.position.y = 1.4
 	_aura.add_child(light)
-	var sparks := GPUParticles3D.new()
+	# Partículas por CPU: las de GPU cierran el juego en algunos celulares.
+	var sparks := CPUParticles3D.new()
 	sparks.amount = 40
 	sparks.lifetime = 1.0
-	var pm := ParticleProcessMaterial.new()
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	pm.emission_sphere_radius = 0.9
-	pm.direction = Vector3.UP
-	pm.spread = 20.0
-	pm.initial_velocity_min = 1.0
-	pm.initial_velocity_max = 2.5
-	pm.gravity = Vector3.ZERO
-	pm.scale_min = 0.5
-	pm.scale_max = 1.0
-	sparks.process_material = pm
+	sparks.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	sparks.emission_sphere_radius = 0.9
+	sparks.direction = Vector3.UP
+	sparks.spread = 20.0
+	sparks.initial_velocity_min = 1.0
+	sparks.initial_velocity_max = 2.5
+	sparks.gravity = Vector3.ZERO
+	sparks.scale_amount_min = 0.5
+	sparks.scale_amount_max = 1.0
 	var quad := QuadMesh.new()
 	quad.size = Vector2(0.08, 0.08)
 	var qm := StandardMaterial3D.new()
@@ -1216,7 +1215,7 @@ func _make_aura(color: Color) -> void:
 	qm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	qm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	quad.material = qm
-	sparks.draw_pass_1 = quad
+	sparks.mesh = quad
 	sparks.position.y = 1.0
 	_aura.add_child(sparks)
 	add_child(_aura)

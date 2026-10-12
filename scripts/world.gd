@@ -137,7 +137,7 @@ var _check := 0.0
 func set_quality(q: int) -> void:
 	# En el celular la calidad baja es todavía más ligera: menos pasto, se
 	# dibuja menos lejos y las luces de antorchas y farolas se apagan lejos.
-	var phone := OS.has_feature("mobile") and q == 0
+	var phone := preload("res://scripts/platform.gd").is_phone()
 	var share: float = 0.15 if phone else [0.35, 0.65, 1.0][q]
 	var reach: float = 30.0 if phone else [45.0, 65.0, 90.0][q]
 	for mmi in _grass_chunks:
@@ -1134,22 +1134,18 @@ func _build_board(p: Vector2) -> void:
 
 
 func _add_fireflies(at: Vector3) -> void:
-	var f := GPUParticles3D.new()
-	f.amount = 60
+	# Partículas por CPU: las de GPU cierran el juego en algunos celulares.
+	var f := CPUParticles3D.new()
+	f.amount = 30 if preload("res://scripts/platform.gd").is_phone() else 60
 	f.lifetime = 4.0
 	f.emitting = false
-	f.visibility_aabb = AABB(Vector3(-20, -2, -20), Vector3(40, 8, 40))
-	var pm := ParticleProcessMaterial.new()
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(16, 1.5, 16)
-	pm.direction = Vector3.UP
-	pm.spread = 180.0
-	pm.initial_velocity_min = 0.2
-	pm.initial_velocity_max = 0.6
-	pm.gravity = Vector3.ZERO
-	pm.turbulence_enabled = true
-	pm.turbulence_noise_strength = 2.0
-	f.process_material = pm
+	f.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	f.emission_box_extents = Vector3(16, 1.5, 16)
+	f.direction = Vector3.UP
+	f.spread = 180.0
+	f.initial_velocity_min = 0.2
+	f.initial_velocity_max = 0.6
+	f.gravity = Vector3.ZERO
 	var quad := QuadMesh.new()
 	quad.size = Vector2(0.12, 0.12)
 	var qm := StandardMaterial3D.new()
@@ -1160,7 +1156,7 @@ func _add_fireflies(at: Vector3) -> void:
 	qm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	qm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	quad.material = qm
-	f.draw_pass_1 = quad
+	f.mesh = quad
 	f.position = at + Vector3(0, 1.5, 0)
 	add_child(f)
 	_fireflies.append(f)

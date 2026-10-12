@@ -67,8 +67,8 @@ static func apply(main: Node, graphics := true) -> void:
 	var q := int(values.calidad)
 	var vp: Viewport = main.get_viewport()
 	vp.msaa_3d = Viewport.MSAA_2X if q == 2 else Viewport.MSAA_DISABLED
-	var phone := OS.has_feature("mobile") and q == 0
-	vp.scaling_3d_scale = (0.6 if phone else 0.75) if q == 0 else 1.0
+	var phone := preload("res://scripts/platform.gd").is_phone()
+	vp.scaling_3d_scale = 0.6 if phone else (0.75 if q == 0 else 1.0)
 	RenderingServer.directional_shadow_atlas_set_size([1024, 2048, 4096][q], true)
 	RenderingServer.directional_soft_shadow_filter_set_quality([RenderingServer.SHADOW_QUALITY_HARD, RenderingServer.SHADOW_QUALITY_SOFT_LOW, RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM][q])
 	if main._sun:

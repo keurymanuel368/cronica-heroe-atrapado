@@ -47,6 +47,8 @@ const NPC_SCRIPT := preload("res://scripts/npc.gd")
 
 
 func _ready() -> void:
+	if "--mem" in OS.get_cmdline_user_args():
+		get_tree().create_timer(25.0).timeout.connect(_print_mem)
 	_rng.seed = 20261009
 	_setup_input()
 	_audio = preload("res://scripts/audio.gd").new()
@@ -844,3 +846,26 @@ func _build_hud() -> void:
 	sys.add_child(msg)
 	_system_panel.add_child(sys)
 	layer.add_child(_system_panel)
+
+
+func _print_mem() -> void:
+	print("MEM static=%d MB video=%d MB tex=%d MB buf=%d MB objs=%d nodes=%d draw=%d prims=%d" % [
+		Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576,
+		Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576,
+		Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED) / 1048576,
+		Performance.get_monitor(Performance.RENDER_BUFFER_MEM_USED) / 1048576,
+		Performance.get_monitor(Performance.OBJECT_COUNT),
+		Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
+		Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+		Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)])
+	var by := {}
+	for g in find_children("*", "GeometryInstance3D", true, false):
+		if not g.is_visible_in_tree():
+			continue
+		var n: Node = g
+		while n.get_parent() and n.get_parent() != self and n.get_parent() != _world:
+			n = n.get_parent()
+		var k := str(n.name).rstrip("0123456789@")
+		by[k] = int(by.get(k, 0)) + 1
+	print(by)
+	get_tree().quit()
