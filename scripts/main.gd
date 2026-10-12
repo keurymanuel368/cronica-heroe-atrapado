@@ -179,6 +179,14 @@ func _ready() -> void:
 
 
 ## Borra la partida y empieza de cero con la escena de introducción.
+func _notification(what: int) -> void:
+	# Con el juego en segundo plano casi no gasta.
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		Engine.max_fps = 15
+	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		Engine.max_fps = 30 if OS.has_feature("mobile") and int(Settings.get_value("calidad")) == 0 else 60
+
+
 func start_new_game() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveGame.PATH))
 	Engine.set_meta("intro", true)

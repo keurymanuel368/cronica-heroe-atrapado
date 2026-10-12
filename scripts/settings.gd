@@ -5,7 +5,7 @@ extends RefCounted
 const PATH := "user://ajustes.cfg"
 const DEFAULTS := {
 	"general": 80, "musica": 70, "efectos": 80, "voces": 90,
-	"sensibilidad": 100, "calidad": 2, "pantalla_completa": false, "ayuda": true,
+	"sensibilidad": 100, "calidad": 1, "pantalla_completa": false, "ayuda": true,
 }
 const QUALITY := ["Baja", "Media", "Alta"]
 
@@ -42,7 +42,7 @@ static func set_value(key: String, value: Variant, main: Node = null) -> void:
 	values[key] = value
 	save_all()
 	if main:
-		apply(main)
+		apply(main, key == "calidad" or key == "pantalla_completa")
 
 
 static func _bus(name_: String, percent: float) -> void:
@@ -53,7 +53,7 @@ static func _bus(name_: String, percent: float) -> void:
 	AudioServer.set_bus_volume_db(i, linear_to_db(maxf(percent, 0.01) / 100.0))
 
 
-static func apply(main: Node) -> void:
+static func apply(main: Node, graphics := true) -> void:
 	if values.is_empty():
 		load_all()
 	_bus("Master", float(values.general))
@@ -62,11 +62,21 @@ static func apply(main: Node) -> void:
 	_bus("Voces", float(values.voces))
 	if main._player:
 		main._player.look_sensitivity = float(values.sensibilidad) / 100.0
+	if not graphics:
+		return
 	var q := int(values.calidad)
 	var vp: Viewport = main.get_viewport()
 	vp.msaa_3d = Viewport.MSAA_2X if q == 2 else Viewport.MSAA_DISABLED
 	vp.scaling_3d_scale = 0.75 if q == 0 else 1.0
 	RenderingServer.directional_shadow_atlas_set_size([1024, 2048, 4096][q], true)
+	RenderingServer.directional_soft_shadow_filter_set_quality([RenderingServer.SHADOW_QUALITY_HARD, RenderingServer.SHADOW_QUALITY_SOFT_LOW, RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM][q])
+	if main._sun:
+		main._sun.directional_shadow_max_distance = [45.0, 70.0, 100.0][q]
+		main._sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL if q == 0 else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	if main._world:
+		main._world.set_quality(q)
+	# Límite de imágenes por segundo: no gasta de más (y en el celular, batería).
+	Engine.max_fps = 30 if OS.has_feature("mobile") and q == 0 else 60
 	if main._env:
 		main._env.glow_enabled = q > 0
 	if not OS.has_feature("mobile"):

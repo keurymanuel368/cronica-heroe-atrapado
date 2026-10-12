@@ -113,9 +113,36 @@ func build() -> void:
 
 
 var _lamps: Array = []
+const GRASS_CHUNK := 24.0
+var _grass_chunks: Array = []
 var _fireflies: Array = []
 var _night := false
 var _check := 0.0
+
+
+## Calidad 0/1/2: cuánto pasto se dibuja y hasta qué distancia; los objetos
+## pequeños lejanos (árboles, rocas, vallas) dejan de dibujarse entre la niebla.
+func set_quality(q: int) -> void:
+	var share: float = [0.35, 0.65, 1.0][q]
+	var reach: float = [45.0, 65.0, 90.0][q]
+	for mmi in _grass_chunks:
+		var mm: MultiMesh = mmi.multimesh
+		mm.visible_instance_count = int(mm.instance_count * share) if mm.instance_count > 300 else -1
+		mmi.visibility_range_end = reach
+	var far: float = [130.0, 160.0, 210.0][q]
+	for g in find_children("*", "GeometryInstance3D", true, false):
+		if g is MultiMeshInstance3D and g in _grass_chunks:
+			continue
+		var box: AABB = g.get_aabb()
+		var size: Vector3 = box.size * g.global_transform.basis.get_scale()
+		if size.length() < 14.0 and size.length() > 0.0:
+			g.visibility_range_end = far
+			g.visibility_range_end_margin = 15.0
+			g.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF if q > 0 else GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	for l in find_children("*", "OmniLight3D", true, false):
+		l.distance_fade_enabled = true
+		l.distance_fade_begin = 35.0
+		l.distance_fade_length = 10.0
 
 
 func _process(delta: float) -> void:
@@ -322,21 +349,34 @@ func _build_grass() -> void:
 		var v := _rng.randf_range(0.85, 1.12)
 		tints.append(Color(v, v * _rng.randf_range(0.97, 1.05), v * 0.95))
 
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_custom_data = true
-	mm.mesh = blade
-	mm.instance_count = spots.size()
-	for i in spots.size():
-		mm.set_instance_transform(i, spots[i])
-		mm.set_instance_custom_data(i, tints[i])
 	var mat := ShaderMaterial.new()
 	mat.shader = GRASS_SHADER
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	mmi.material_override = mat
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mmi)
+	# En trozos de 24 m: solo se dibuja el pasto cercano al héroe.
+	var chunks := {}
+	for i in spots.size():
+		var key := Vector2i(floori(spots[i].origin.x / GRASS_CHUNK), floori(spots[i].origin.z / GRASS_CHUNK))
+		if not chunks.has(key):
+			chunks[key] = []
+		chunks[key].append(i)
+	for key in chunks:
+		var ids: Array = chunks[key]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
+		mm.mesh = blade
+		mm.instance_count = ids.size()
+		for j in ids.size():
+			mm.set_instance_transform(j, spots[ids[j]])
+			mm.set_instance_custom_data(j, tints[ids[j]])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = mat
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.visibility_range_end = 70.0
+		mmi.visibility_range_end_margin = 10.0
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		add_child(mmi)
+		_grass_chunks.append(mmi)
 
 	# Flores en manchas.
 	var flower_colors := [Color(1, 1, 0.95), Color(1.0, 0.86, 0.3), Color(1.0, 0.62, 0.75), Color(0.65, 0.75, 1.0)]
@@ -373,6 +413,7 @@ func _build_grass() -> void:
 	fmmi.multimesh = fmm
 	fmmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(fmmi)
+	_grass_chunks.append(fmmi)
 
 
 # --- Árboles y rocas ------------------------------------------------------

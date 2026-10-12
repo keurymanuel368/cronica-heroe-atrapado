@@ -85,8 +85,14 @@ func _bake() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-func _process(_delta: float) -> void:
-	if is_visible_in_tree():
+var _redraw := 0.0
+
+
+func _process(delta: float) -> void:
+	# 15 veces por segundo basta para el mapa.
+	_redraw -= delta
+	if _redraw <= 0.0 and is_visible_in_tree():
+		_redraw = 1.0 / 15.0
 		queue_redraw()
 
 

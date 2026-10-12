@@ -87,6 +87,10 @@ var _special_timer := 6.0
 ## Número para el cooperativo (igual en todos los ordenadores).
 var net_id := -1
 var _roared := false
+const FAR_DISTANCE := 75.0
+var _far := false
+var _far_acc := 0.0
+var _lod_timer := randf() * 0.5
 var _net: Node
 var _net_pos := Vector3.ZERO
 var _net_rot := 0.0
@@ -273,7 +277,30 @@ func _net_puppet(delta: float) -> void:
 	_model.rotation.y = lerp_angle(_model.rotation.y, _net_rot, 1.0 - exp(-12.0 * delta))
 
 
+## Lejos de todos los héroes el enemigo no se dibuja ni se anima, y piensa
+## solo 4 veces por segundo: así cien enemigos no frenan el juego.
+func _update_lod(delta: float) -> bool:
+	_lod_timer -= delta
+	if _lod_timer <= 0.0:
+		_lod_timer = 0.5
+		var p := _player()
+		var far := p != null and p.global_position.distance_to(global_position) > FAR_DISTANCE and not is_chasing()
+		if far != _far:
+			_far = far
+			_model.visible = not far
+			_anim.active = not far
+			if far:
+				_set_bar_visible(false)
+	return _far
+
+
 func _physics_process(delta: float) -> void:
+	if _update_lod(delta):
+		_far_acc += delta
+		if _far_acc < 0.25:
+			return
+		delta = _far_acc
+		_far_acc = 0.0
 	if _net and _net.is_client():
 		_net_puppet(delta)
 		return
